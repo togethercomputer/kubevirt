@@ -2184,19 +2184,19 @@ func (c *Controller) updateMultusAnnotation(namespace string, interfaces []virtv
 
 	currentMultusAnnotation := podAnnotations[networkv1.NetworkAttachmentAnnot]
 	log.Log.Object(pod).V(4).Infof(
-		"current multus annotation for pod: %s; updated multus annotation for pod with: %s",
+		"current multus annotation for pod: %s; not updating multus annotation for pod with: %s",
 		currentMultusAnnotation,
 		multusAnnotations,
 	)
 
-	if multusAnnotations != currentMultusAnnotation {
-		newAnnotations := map[string]string{networkv1.NetworkAttachmentAnnot: multusAnnotations}
-		patchedPod, err := c.syncPodAnnotations(pod, newAnnotations)
-		if err != nil {
-			return err
-		}
-		*pod = *patchedPod
-	}
+	// if multusAnnotations != currentMultusAnnotation {
+	// 	newAnnotations := map[string]string{networkv1.NetworkAttachmentAnnot: multusAnnotations}
+	// 	patchedPod, err := c.syncPodAnnotations(pod, newAnnotations)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	*pod = *patchedPod
+	// }
 
 	return nil
 }
