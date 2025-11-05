@@ -3405,6 +3405,118 @@ var _ = Describe("SetDriverCacheMode", func() {
 		Entry("'writethrough' without direct io", string(v1.CacheWriteThrough), string(v1.CacheWriteThrough), expectCheckFalse),
 		Entry("'writethrough' on error", string(v1.CacheWriteThrough), string(v1.CacheWriteThrough), expectCheckError),
 	)
+
+	Context("with overlay volumes", func() {
+		It("should convert overlay volume with backing PVC", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
+				Name: "test",
+			})
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "test",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+						BackingFormat: "raw",
+					},
+				},
+			})
+
+			isBlockPVCMap := make(map[string]bool)
+			isBlockPVCMap["backing-test"] = false
+
+			domain := vmiToDomain(vmi, &ConverterContext{
+				Architecture:         archconverter.NewConverter(runtime.GOARCH),
+				AllowEmulation:       true,
+				EphemeraldiskCreator: EphemeralDiskImageCreator,
+				IsBlockPVC:           isBlockPVCMap,
+				IsBlockDV:            make(map[string]bool),
+			})
+
+			Expect(domain.Spec.Devices.Disks).To(HaveLen(1))
+			Expect(domain.Spec.Devices.Disks[0].Type).To(Equal("file"))
+			Expect(domain.Spec.Devices.Disks[0].Driver.Type).To(Equal("qcow2"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore).ToNot(BeNil())
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Format.Type).To(Equal("raw"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Type).To(Equal("file"))
+		})
+
+		It("should convert overlay volume with backing HostPath", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
+				Name: "test",
+			})
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "test",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingHostPath: &corev1.HostPathVolumeSource{
+							Path: "/var/lib/images/base.img",
+						},
+						BackingFormat: "qcow2",
+					},
+				},
+			})
+
+			domain := vmiToDomain(vmi, &ConverterContext{
+				Architecture:         archconverter.NewConverter(runtime.GOARCH),
+				AllowEmulation:       true,
+				EphemeraldiskCreator: EphemeralDiskImageCreator,
+				IsBlockPVC:           make(map[string]bool),
+				IsBlockDV:            make(map[string]bool),
+			})
+
+			Expect(domain.Spec.Devices.Disks).To(HaveLen(1))
+			Expect(domain.Spec.Devices.Disks[0].Type).To(Equal("file"))
+			Expect(domain.Spec.Devices.Disks[0].Driver.Type).To(Equal("qcow2"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore).ToNot(BeNil())
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Format.Type).To(Equal("qcow2"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Type).To(Equal("file"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Source.File).To(Equal("/var/lib/images/base.img"))
+		})
+
+		It("should convert overlay volume with block PVC backing", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
+				Name: "test",
+			})
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "test",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "block-pvc",
+							},
+						},
+						BackingFormat: "raw",
+					},
+				},
+			})
+
+			isBlockPVCMap := make(map[string]bool)
+			isBlockPVCMap["backing-test"] = true
+
+			domain := vmiToDomain(vmi, &ConverterContext{
+				Architecture:         archconverter.NewConverter(runtime.GOARCH),
+				AllowEmulation:       true,
+				EphemeraldiskCreator: EphemeralDiskImageCreator,
+				IsBlockPVC:           isBlockPVCMap,
+				IsBlockDV:            make(map[string]bool),
+			})
+
+			Expect(domain.Spec.Devices.Disks).To(HaveLen(1))
+			Expect(domain.Spec.Devices.Disks[0].Type).To(Equal("file"))
+			Expect(domain.Spec.Devices.Disks[0].Driver.Type).To(Equal("qcow2"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore).ToNot(BeNil())
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Type).To(Equal("block"))
+			Expect(domain.Spec.Devices.Disks[0].BackingStore.Source.Dev).ToNot(BeEmpty())
+		})
+	})
 })
 
 func diskToDiskXML(arch string, disk *v1.Disk) string {

@@ -793,6 +793,11 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 	if err != nil {
 		return domain, fmt.Errorf("preparing ephemeral images failed: %v", err)
 	}
+	// Create images for overlay volumes.
+	err = ephemeraldisk.NewOverlayDiskHandler().CreateOverlayImages(vmi, domain)
+	if err != nil {
+		return domain, fmt.Errorf("preparing overlay images failed: %v", err)
+	}
 	// create empty disks if they exist
 	if err := emptydisk.NewEmptyDiskCreator().CreateTemporaryDisks(vmi); err != nil {
 		return domain, fmt.Errorf("creating empty disks failed: %v", err)

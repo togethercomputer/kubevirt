@@ -11240,6 +11240,34 @@
      }
     }
    },
+   "k8s.io.api.core.v1.HostPathVolumeSource": {
+    "description": "Represents a host path mapped into a pod. Host path volumes do not support ownership management or SELinux relabeling.",
+    "type": "object",
+    "required": [
+     "path"
+    ],
+    "properties": {
+     "path": {
+      "description": "path of the directory on the host. If the path is a symlink, it will follow the link to the real path. More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath",
+      "type": "string",
+      "default": ""
+     },
+     "type": {
+      "description": "type for HostPath Volume Defaults to \"\" More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath\n\nPossible enum values:\n - `\"\"` For backwards compatible, leave it empty if unset\n - `\"BlockDevice\"` A block device must exist at the given path\n - `\"CharDevice\"` A character device must exist at the given path\n - `\"Directory\"` A directory must exist at the given path\n - `\"DirectoryOrCreate\"` If nothing exists at the given path, an empty directory will be created there as needed with file mode 0755, having the same group and ownership with Kubelet.\n - `\"File\"` A file must exist at the given path\n - `\"FileOrCreate\"` If nothing exists at the given path, an empty file will be created there as needed with file mode 0644, having the same group and ownership with Kubelet.\n - `\"Socket\"` A UNIX socket must exist at the given path",
+      "type": "string",
+      "enum": [
+       "",
+       "BlockDevice",
+       "CharDevice",
+       "Directory",
+       "DirectoryOrCreate",
+       "File",
+       "FileOrCreate",
+       "Socket"
+      ]
+     }
+    }
+   },
    "k8s.io.api.core.v1.LocalObjectReference": {
     "description": "LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.",
     "type": "object",
@@ -15250,6 +15278,40 @@
      }
     }
    },
+   "v1.OverlayVolumeSource": {
+    "description": "OverlayVolumeSource represents a qcow2 overlay volume with a backing source. The overlay provides copy-on-write semantics on top of the backing source.",
+    "type": "object",
+    "properties": {
+     "backingFormat": {
+      "description": "BackingFormat specifies the format of the backing image (raw or qcow2). Defaults to raw if not specified.",
+      "type": "string"
+     },
+     "backingHostPath": {
+      "description": "BackingHostPath represents a pre-existing host file or directory used as the backing source.",
+      "$ref": "#/definitions/k8s.io.api.core.v1.HostPathVolumeSource"
+     },
+     "backingPVC": {
+      "description": "BackingPVC is a reference to a PersistentVolumeClaim used as the backing (read-only) source.",
+      "$ref": "#/definitions/v1.PersistentVolumeClaimVolumeSource"
+     },
+     "checksum": {
+      "description": "Checksum is an optional expected checksum of the backing source for validation.",
+      "type": "string"
+     },
+     "persistent": {
+      "description": "Persistent indicates whether the overlay should be kept across VM restarts. If false, the overlay is deleted when the VM stops. Defaults to false.",
+      "type": "boolean"
+     },
+     "targetHostPath": {
+      "description": "TargetHostPath specifies where to place the overlay file on the host. If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).",
+      "$ref": "#/definitions/k8s.io.api.core.v1.HostPathVolumeSource"
+     },
+     "targetPVC": {
+      "description": "TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored. If specified, the overlay will be persisted to this PVC instead of node-local storage.",
+      "$ref": "#/definitions/v1.PersistentVolumeClaimVolumeSource"
+     }
+    }
+   },
    "v1.PITTimer": {
     "type": "object",
     "properties": {
@@ -17837,6 +17899,10 @@
       "description": "Volume's name. Must be a DNS_LABEL and unique within the vmi. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names",
       "type": "string",
       "default": ""
+     },
+     "overlay": {
+      "description": "Overlay represents a qcow2 overlay volume with explicit backing and target sources. Provides copy-on-write semantics with more control than ephemeral volumes.",
+      "$ref": "#/definitions/v1.OverlayVolumeSource"
      },
      "persistentVolumeClaim": {
       "description": "PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace. Directly attached to the vmi via qemu. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims",

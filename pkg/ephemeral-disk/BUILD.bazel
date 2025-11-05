@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
-    srcs = ["ephemeral-disk.go"],
+    srcs = [
+        "ephemeral-disk.go",
+        "overlay-disk-handler.go",
+    ],
     importpath = "kubevirt.io/kubevirt/pkg/ephemeral-disk",
     visibility = ["//visibility:public"],
     deps = [

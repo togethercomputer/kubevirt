@@ -442,6 +442,7 @@ func (VolumeSource) SwaggerDoc() map[string]string {
 		"sysprep":               "Represents a Sysprep volume source.\n+optional",
 		"containerDisk":         "ContainerDisk references a docker image, embedding a qcow or raw disk.\nMore info: https://kubevirt.gitbooks.io/user-guide/registry-disk.html\n+optional",
 		"ephemeral":             "Ephemeral is a special volume source that \"wraps\" specified source and provides copy-on-write image on top of it.\n+optional",
+		"overlay":               "Overlay represents a qcow2 overlay volume with explicit backing and target sources.\nProvides copy-on-write semantics with more control than ephemeral volumes.\n+optional",
 		"emptyDisk":             "EmptyDisk represents a temporary disk which shares the vmis lifecycle.\nMore info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html\n+optional",
 		"dataVolume":            "DataVolume represents the dynamic creation a PVC for this volume as well as\nthe process of populating that PVC with a disk image.\n+optional",
 		"configMap":             "ConfigMapSource represents a reference to a ConfigMap in the same namespace.\nMore info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/\n+optional",
@@ -482,6 +483,19 @@ func (MemoryDumpVolumeSource) SwaggerDoc() map[string]string {
 func (EphemeralVolumeSource) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"persistentVolumeClaim": "PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.\nDirectly attached to the vmi via qemu.\nMore info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims\n+optional",
+	}
+}
+
+func (OverlayVolumeSource) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"":                "OverlayVolumeSource represents a qcow2 overlay volume with a backing source.\nThe overlay provides copy-on-write semantics on top of the backing source.",
+		"backingPVC":      "BackingPVC is a reference to a PersistentVolumeClaim used as the backing (read-only) source.\n+optional",
+		"backingHostPath": "BackingHostPath represents a pre-existing host file or directory used as the backing source.\n+optional",
+		"targetHostPath":  "TargetHostPath specifies where to place the overlay file on the host.\nIf empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).\n+optional",
+		"targetPVC":       "TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.\nIf specified, the overlay will be persisted to this PVC instead of node-local storage.\n+optional",
+		"backingFormat":   "BackingFormat specifies the format of the backing image (raw or qcow2).\nDefaults to raw if not specified.\n+optional",
+		"persistent":      "Persistent indicates whether the overlay should be kept across VM restarts.\nIf false, the overlay is deleted when the VM stops.\nDefaults to false.\n+optional",
+		"checksum":        "Checksum is an optional expected checksum of the backing source for validation.\n+optional",
 	}
 }
 

@@ -1612,6 +1612,9 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 		if volume.Ephemeral != nil {
 			volumeSourceSetCount++
 		}
+		if volume.Overlay != nil {
+			volumeSourceSetCount++
+		}
 		if volume.EmptyDisk != nil {
 			volumeSourceSetCount++
 		}
@@ -1825,6 +1828,112 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 					Type:    metav1.CauseTypeFieldValueInvalid,
 					Message: fmt.Sprintf(requiredFieldFmt, field.Index(idx).Child("secret", "secretName").String()),
 					Field:   field.Index(idx).Child("secret", "secretName").String(),
+				})
+			}
+		}
+
+		// Validate overlay volume
+		if overlay := volume.Overlay; overlay != nil {
+			// Verify at least one backing source is set
+			backingSourceCount := 0
+			if overlay.BackingPVC != nil {
+				backingSourceCount++
+			}
+			if overlay.BackingHostPath != nil {
+				backingSourceCount++
+			}
+
+			if backingSourceCount == 0 {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: fmt.Sprintf("%s must have at least one backing source (backingPVC or backingHostPath)", field.Index(idx).Child("overlay").String()),
+					Field:   field.Index(idx).Child("overlay").String(),
+				})
+			}
+
+			if backingSourceCount > 1 {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: fmt.Sprintf("%s must have exactly one backing source (backingPVC or backingHostPath)", field.Index(idx).Child("overlay").String()),
+					Field:   field.Index(idx).Child("overlay").String(),
+				})
+			}
+
+			// Verify at most one target is set (or none for default)
+			targetCount := 0
+			if overlay.TargetHostPath != nil {
+				targetCount++
+			}
+			if overlay.TargetPVC != nil {
+				targetCount++
+			}
+
+			if targetCount > 1 {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: fmt.Sprintf("%s can have at most one target (targetHostPath or targetPVC)", field.Index(idx).Child("overlay").String()),
+					Field:   field.Index(idx).Child("overlay").String(),
+				})
+			}
+
+			// Validate persistent flag consistency with target location
+			if overlay.Persistent && targetCount == 0 {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: fmt.Sprintf("%s with persistent=true requires targetPVC or targetHostPath to be specified. Overlays cannot persist to ephemeral storage.", field.Index(idx).Child("overlay").String()),
+					Field:   field.Index(idx).Child("overlay", "persistent").String(),
+				})
+			}
+
+			// If target is specified, persistent must be true
+			if targetCount > 0 && !overlay.Persistent {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: fmt.Sprintf("%s with targetPVC or targetHostPath specified requires persistent=true. Non-persistent overlays must use the default ephemeral location.", field.Index(idx).Child("overlay").String()),
+					Field:   field.Index(idx).Child("overlay", "persistent").String(),
+				})
+			}
+
+			// Validate backingFormat if specified
+			if overlay.BackingFormat != "" && overlay.BackingFormat != "raw" && overlay.BackingFormat != "qcow2" {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: fmt.Sprintf("%s has invalid backingFormat '%s', allowed values are 'raw' or 'qcow2'", field.Index(idx).Child("overlay", "backingFormat").String(), overlay.BackingFormat),
+					Field:   field.Index(idx).Child("overlay", "backingFormat").String(),
+				})
+			}
+
+			// Validate PVC name if specified
+			if overlay.BackingPVC != nil && overlay.BackingPVC.ClaimName == "" {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueRequired,
+					Message: fmt.Sprintf("%s claimName must be set", field.Index(idx).Child("overlay", "backingPVC").String()),
+					Field:   field.Index(idx).Child("overlay", "backingPVC", "claimName").String(),
+				})
+			}
+
+			if overlay.TargetPVC != nil && overlay.TargetPVC.ClaimName == "" {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueRequired,
+					Message: fmt.Sprintf("%s claimName must be set", field.Index(idx).Child("overlay", "targetPVC").String()),
+					Field:   field.Index(idx).Child("overlay", "targetPVC", "claimName").String(),
+				})
+			}
+
+			// Validate HostPath if specified
+			if overlay.BackingHostPath != nil && overlay.BackingHostPath.Path == "" {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueRequired,
+					Message: fmt.Sprintf("%s path must be set", field.Index(idx).Child("overlay", "backingHostPath").String()),
+					Field:   field.Index(idx).Child("overlay", "backingHostPath", "path").String(),
+				})
+			}
+
+			if overlay.TargetHostPath != nil && overlay.TargetHostPath.Path == "" {
+				causes = append(causes, metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueRequired,
+					Message: fmt.Sprintf("%s path must be set", field.Index(idx).Child("overlay", "targetHostPath").String()),
+					Field:   field.Index(idx).Child("overlay", "targetHostPath", "path").String(),
 				})
 			}
 		}
