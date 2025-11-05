@@ -602,9 +602,24 @@ func (vr *VolumeRenderer) handleOverlayVolume(volume v1.Volume, pvcStore cache.S
 	backingVolumeName := fmt.Sprintf("backing-%s", volume.Name)
 	if overlay.BackingPVC != nil {
 		claimName := overlay.BackingPVC.ClaimName
-		if err := vr.addPVCToLaunchManifest(pvcStore, volume, claimName); err != nil {
+
+		// Create a temporary volume struct with the backing volume name for mount path resolution
+		backingVolume := v1.Volume{
+			Name: backingVolumeName,
+			VolumeSource: v1.VolumeSource{
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName,
+						ReadOnly:  true,
+					},
+				},
+			},
+		}
+
+		if err := vr.addPVCToLaunchManifest(pvcStore, backingVolume, claimName); err != nil {
 			return err
 		}
+
 		vr.podVolumes = append(vr.podVolumes, k8sv1.Volume{
 			Name: backingVolumeName,
 			VolumeSource: k8sv1.VolumeSource{
@@ -625,6 +640,7 @@ func (vr *VolumeRenderer) handleOverlayVolume(volume v1.Volume, pvcStore cache.S
 				},
 			},
 		})
+		// For HostPath, we don't mount it - the path is used directly
 	}
 
 	// Handle target location for overlay
@@ -632,9 +648,23 @@ func (vr *VolumeRenderer) handleOverlayVolume(volume v1.Volume, pvcStore cache.S
 		// Target is a PVC
 		targetVolumeName := fmt.Sprintf("target-%s", volume.Name)
 		claimName := overlay.TargetPVC.ClaimName
-		if err := vr.addPVCToLaunchManifest(pvcStore, volume, claimName); err != nil {
+
+		// Create a temporary volume struct with the target volume name for mount path resolution
+		targetVolume := v1.Volume{
+			Name: targetVolumeName,
+			VolumeSource: v1.VolumeSource{
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName,
+					},
+				},
+			},
+		}
+
+		if err := vr.addPVCToLaunchManifest(pvcStore, targetVolume, claimName); err != nil {
 			return err
 		}
+
 		vr.podVolumes = append(vr.podVolumes, k8sv1.Volume{
 			Name: targetVolumeName,
 			VolumeSource: k8sv1.VolumeSource{
@@ -656,6 +686,7 @@ func (vr *VolumeRenderer) handleOverlayVolume(volume v1.Volume, pvcStore cache.S
 				},
 			},
 		})
+		// For HostPath, we don't mount it - the path is used directly
 	}
 	// If neither target is specified, we'll use the default location in ephemeral-disks
 
