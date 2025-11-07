@@ -576,6 +576,9 @@ func Convert_v1_Volume_To_api_Disk(source *v1.Volume, disk *api.Disk, c *Convert
 	if source.Ephemeral != nil {
 		return Convert_v1_EphemeralVolumeSource_To_api_Disk(source.Name, disk, c)
 	}
+	if source.Overlay != nil {
+		return Convert_v1_OverlayVolumeSource_To_api_Disk(source.Name, source.Overlay, disk, c)
+	}
 	if source.EmptyDisk != nil {
 		return Convert_v1_EmptyDiskSource_To_api_Disk(source.Name, source.EmptyDisk, disk)
 	}
@@ -853,6 +856,67 @@ func Convert_v1_EphemeralVolumeSource_To_api_Disk(volumeName string, disk *api.D
 	disk.BackingStore.Type = backingDisk.Type
 
 	return nil
+}
+
+func Convert_v1_OverlayVolumeSource_To_api_Disk(volumeName string, overlay *v1.OverlayVolumeSource, disk *api.Disk, c *ConverterContext) error {
+	disk.Type = "file"
+	disk.Driver.Type = "qcow2"
+	disk.Driver.ErrorPolicy = v1.DiskErrorPolicyStop
+	disk.Driver.Discard = "unmap"
+
+	// Set the overlay disk path based on target location
+	disk.Source.File = getOverlayDiskPath(volumeName, overlay)
+
+	// Configure backing store
+	disk.BackingStore = &api.BackingStore{
+		Format: &api.BackingStoreFormat{},
+		Source: &api.DiskSource{},
+	}
+
+	// Determine backing format (default to raw if not specified)
+	backingFormat := "raw"
+	if overlay.BackingFormat != "" {
+		backingFormat = overlay.BackingFormat
+	}
+	disk.BackingStore.Format.Type = backingFormat
+
+	// Set backing source path based on backing source type
+	backingVolumeName := fmt.Sprintf("backing-%s", volumeName)
+	if overlay.BackingPVC != nil {
+		// For PVC backing, check if it's block or filesystem
+		if c.IsBlockPVC[backingVolumeName] {
+			disk.BackingStore.Type = "block"
+			disk.BackingStore.Source.Dev = GetBlockDeviceVolumePath(backingVolumeName)
+		} else {
+			disk.BackingStore.Type = "file"
+			disk.BackingStore.Source.File = GetFilesystemVolumePath(backingVolumeName)
+		}
+	} else if overlay.BackingHostPath != nil {
+		// For HostPath backing
+		disk.BackingStore.Type = "file"
+		disk.BackingStore.Source.File = overlay.BackingHostPath.Path
+	}
+
+	return nil
+}
+
+func getOverlayDiskPath(volumeName string, overlay *v1.OverlayVolumeSource) string {
+	if overlay.TargetPVC != nil {
+		// For target PVC, the volume is mounted at /var/run/kubevirt-private/vmi-disks/target-<volumeName>
+		targetVolumeName := fmt.Sprintf("target-%s", volumeName)
+		return filepath.Join(string(filepath.Separator), "var", "run", "kubevirt-private", "vmi-disks", targetVolumeName, "overlay.qcow2")
+	}
+
+	if overlay.TargetHostPath != nil {
+		// For target HostPath, the file is created directly at the specified path
+		path := overlay.TargetHostPath.Path
+		// Append filename to the path (assume it's a directory)
+		return filepath.Join(path, fmt.Sprintf("%s.qcow2", volumeName))
+	}
+
+	// Default: use overlay disk location
+	// /var/run/kubevirt-private/overlay-disks/<volumeName>/disk.qcow2
+	return filepath.Join(string(filepath.Separator), "var", "run", "kubevirt-private", "overlay-disks", volumeName, "disk.qcow2")
 }
 
 func Convert_v1_Watchdog_To_api_Watchdog(source *v1.Watchdog, watchdog *api.Watchdog, _ *ConverterContext) error {

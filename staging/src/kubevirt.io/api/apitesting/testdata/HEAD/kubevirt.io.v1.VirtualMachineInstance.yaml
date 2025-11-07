@@ -562,6 +562,23 @@ spec:
       hotpluggable: true
       readOnly: true
     name: nameValue
+    overlay:
+      backingFormat: backingFormatValue
+      backingHostPath:
+        path: pathValue
+        type: typeValue
+      backingPVC:
+        claimName: claimNameValue
+        hotpluggable: true
+        readOnly: true
+      persistent: true
+      targetHostPath:
+        path: pathValue
+        type: typeValue
+      targetPVC:
+        claimName: claimNameValue
+        hotpluggable: true
+        readOnly: true
     persistentVolumeClaim:
       claimName: claimNameValue
       hotpluggable: true

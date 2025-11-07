@@ -765,6 +765,28 @@
                 "readOnly": true
               }
             },
+            "overlay": {
+              "backingPVC": {
+                "claimName": "claimNameValue",
+                "readOnly": true,
+                "hotpluggable": true
+              },
+              "backingHostPath": {
+                "path": "pathValue",
+                "type": "typeValue"
+              },
+              "targetHostPath": {
+                "path": "pathValue",
+                "type": "typeValue"
+              },
+              "targetPVC": {
+                "claimName": "claimNameValue",
+                "readOnly": true,
+                "hotpluggable": true
+              },
+              "backingFormat": "backingFormatValue",
+              "persistent": true
+            },
             "emptyDisk": {
               "capacity": "0"
             },
