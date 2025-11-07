@@ -640,7 +640,11 @@ func (vr *VolumeRenderer) handleOverlayVolume(volume v1.Volume, pvcStore cache.S
 				},
 			},
 		})
-		// For HostPath, we don't mount it - the path is used directly
+		vr.podVolumeMounts = append(vr.podVolumeMounts, k8sv1.VolumeMount{
+			Name:      backingVolumeName,
+			MountPath: overlay.BackingHostPath.Path,
+			ReadOnly:  true,
+		})
 	}
 
 	// Handle target location for overlay
@@ -686,7 +690,6 @@ func (vr *VolumeRenderer) handleOverlayVolume(volume v1.Volume, pvcStore cache.S
 				},
 			},
 		})
-		// For HostPath, we don't mount it - the path is used directly
 	}
 	// If neither target is specified, we'll use the default location in ephemeral-disks
 

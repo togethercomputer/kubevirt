@@ -923,9 +923,6 @@ type OverlayVolumeSource struct {
 	// Defaults to false.
 	// +optional
 	Persistent bool `json:"persistent,omitempty"`
-	// Checksum is an optional expected checksum of the backing source for validation.
-	// +optional
-	Checksum string `json:"checksum,omitempty"`
 }
 
 // EmptyDisk represents a temporary disk which shares the vmis lifecycle.
