@@ -1876,24 +1876,24 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 				})
 			} else {
 
-			// Validate persistent flag consistency with target location
-			if overlay.Persistent && targetCount == 0 {
-				causes = append(causes, metav1.StatusCause{
-					Type:    metav1.CauseTypeFieldValueInvalid,
-					Message: fmt.Sprintf("%s with persistent=true requires targetPVC or targetHostPath to be specified. Overlays cannot persist to ephemeral storage.", field.Index(idx).Child("overlay").String()),
-					Field:   field.Index(idx).Child("overlay", "persistent").String(),
-				})
-			}
+				// Validate persistent flag consistency with target location
+				if overlay.Persistent && targetCount == 0 {
+					causes = append(causes, metav1.StatusCause{
+						Type:    metav1.CauseTypeFieldValueInvalid,
+						Message: fmt.Sprintf("%s with persistent=true requires targetPVC or targetHostPath to be specified. Overlays cannot persist to ephemeral storage.", field.Index(idx).Child("overlay").String()),
+						Field:   field.Index(idx).Child("overlay", "persistent").String(),
+					})
+				}
 
-			// If target is specified, persistent must be true
-			if targetCount > 0 && !overlay.Persistent {
-				causes = append(causes, metav1.StatusCause{
-					Type:    metav1.CauseTypeFieldValueInvalid,
-					Message: fmt.Sprintf("%s with targetPVC or targetHostPath specified requires persistent=true. Non-persistent overlays must use the default ephemeral location.", field.Index(idx).Child("overlay").String()),
-					Field:   field.Index(idx).Child("overlay", "persistent").String(),
-				})
+				// If target is specified, persistent must be true
+				if targetCount > 0 && !overlay.Persistent {
+					causes = append(causes, metav1.StatusCause{
+						Type:    metav1.CauseTypeFieldValueInvalid,
+						Message: fmt.Sprintf("%s with targetPVC or targetHostPath specified requires persistent=true. Non-persistent overlays must use the default ephemeral location.", field.Index(idx).Child("overlay").String()),
+						Field:   field.Index(idx).Child("overlay", "persistent").String(),
+					})
+				}
 			}
-		}
 
 			// Validate backingFormat if specified
 			if overlay.BackingFormat != "" && overlay.BackingFormat != "raw" && overlay.BackingFormat != "qcow2" {

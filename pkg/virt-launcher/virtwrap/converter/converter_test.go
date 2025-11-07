@@ -3355,7 +3355,7 @@ var _ = Describe("direct IO checker", func() {
 var _ = Describe("SetDriverCacheMode", func() {
 	var ctrl *gomock.Controller
 	var mockDirectIOChecker *MockDirectIOChecker
-	
+
 	EphemeralDiskImageCreator := &fake.MockEphemeralDiskImageCreator{BaseDir: "/var/run/libvirt/kubevirt-ephemeral-disk/"}
 	BeforeEach(func() {
 		ctrl = gomock.NewController(GinkgoT())

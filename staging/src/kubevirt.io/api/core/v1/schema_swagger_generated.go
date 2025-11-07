@@ -495,7 +495,6 @@ func (OverlayVolumeSource) SwaggerDoc() map[string]string {
 		"targetPVC":       "TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.\nIf specified, the overlay will be persisted to this PVC instead of node-local storage.\n+optional",
 		"backingFormat":   "BackingFormat specifies the format of the backing image (raw or qcow2).\nDefaults to raw if not specified.\n+optional",
 		"persistent":      "Persistent indicates whether the overlay should be kept across VM restarts.\nIf false, the overlay is deleted when the VM stops.\nDefaults to false.\n+optional",
-		"checksum":        "Checksum is an optional expected checksum of the backing source for validation.\n+optional",
 	}
 }
 

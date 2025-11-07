@@ -22708,13 +22708,6 @@ func schema_kubevirtio_api_core_v1_OverlayVolumeSource(ref common.ReferenceCallb
 							Format:      "",
 						},
 					},
-					"checksum": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Checksum is an optional expected checksum of the backing source for validation.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
 				},
 			},
 		},

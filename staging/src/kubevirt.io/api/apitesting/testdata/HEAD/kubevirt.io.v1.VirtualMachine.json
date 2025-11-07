@@ -785,8 +785,7 @@
                 "hotpluggable": true
               },
               "backingFormat": "backingFormatValue",
-              "persistent": true,
-              "checksum": "checksumValue"
+              "persistent": true
             },
             "emptyDisk": {
               "capacity": "0"

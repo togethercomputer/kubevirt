@@ -7940,10 +7940,6 @@ var CRDsValidation map[string]string = map[string]string{
                             required:
                             - claimName
                             type: object
-                          checksum:
-                            description: Checksum is an optional expected checksum
-                              of the backing source for validation.
-                            type: string
                           persistent:
                             description: |-
                               Persistent indicates whether the overlay should be kept across VM restarts.
@@ -13243,10 +13239,6 @@ var CRDsValidation map[string]string = map[string]string{
                     required:
                     - claimName
                     type: object
-                  checksum:
-                    description: Checksum is an optional expected checksum of the
-                      backing source for validation.
-                    type: string
                   persistent:
                     description: |-
                       Persistent indicates whether the overlay should be kept across VM restarts.
@@ -18980,10 +18972,6 @@ var CRDsValidation map[string]string = map[string]string{
                             required:
                             - claimName
                             type: object
-                          checksum:
-                            description: Checksum is an optional expected checksum
-                              of the backing source for validation.
-                            type: string
                           persistent:
                             description: |-
                               Persistent indicates whether the overlay should be kept across VM restarts.
@@ -23589,10 +23577,6 @@ var CRDsValidation map[string]string = map[string]string{
                                     required:
                                     - claimName
                                     type: object
-                                  checksum:
-                                    description: Checksum is an optional expected
-                                      checksum of the backing source for validation.
-                                    type: string
                                   persistent:
                                     description: |-
                                       Persistent indicates whether the overlay should be kept across VM restarts.
@@ -28893,10 +28877,6 @@ var CRDsValidation map[string]string = map[string]string{
                                         required:
                                         - claimName
                                         type: object
-                                      checksum:
-                                        description: Checksum is an optional expected
-                                          checksum of the backing source for validation.
-                                        type: string
                                       persistent:
                                         description: |-
                                           Persistent indicates whether the overlay should be kept across VM restarts.

@@ -571,7 +571,6 @@ spec:
         claimName: claimNameValue
         hotpluggable: true
         readOnly: true
-      checksum: checksumValue
       persistent: true
       targetHostPath:
         path: pathValue
