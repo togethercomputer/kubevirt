@@ -1874,7 +1874,7 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 					Message: fmt.Sprintf("%s can have at most one target (targetHostPath or targetPVC)", field.Index(idx).Child("overlay").String()),
 					Field:   field.Index(idx).Child("overlay").String(),
 				})
-			}
+			} else {
 
 			// Validate persistent flag consistency with target location
 			if overlay.Persistent && targetCount == 0 {
@@ -1893,6 +1893,7 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 					Field:   field.Index(idx).Child("overlay", "persistent").String(),
 				})
 			}
+		}
 
 			// Validate backingFormat if specified
 			if overlay.BackingFormat != "" && overlay.BackingFormat != "raw" && overlay.BackingFormat != "qcow2" {

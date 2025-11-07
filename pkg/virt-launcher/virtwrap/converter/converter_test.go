@@ -3355,7 +3355,8 @@ var _ = Describe("direct IO checker", func() {
 var _ = Describe("SetDriverCacheMode", func() {
 	var ctrl *gomock.Controller
 	var mockDirectIOChecker *MockDirectIOChecker
-
+	
+	EphemeralDiskImageCreator := &fake.MockEphemeralDiskImageCreator{BaseDir: "/var/run/libvirt/kubevirt-ephemeral-disk/"}
 	BeforeEach(func() {
 		ctrl = gomock.NewController(GinkgoT())
 		mockDirectIOChecker = NewMockDirectIOChecker(ctrl)
@@ -3408,7 +3409,7 @@ var _ = Describe("SetDriverCacheMode", func() {
 
 	Context("with overlay volumes", func() {
 		It("should convert overlay volume with backing PVC", func() {
-			vmi := api.NewMinimalVMI("testvmi")
+			vmi := kvapi.NewMinimalVMI("testvmi")
 			vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
 				Name: "test",
 			})
@@ -3417,7 +3418,7 @@ var _ = Describe("SetDriverCacheMode", func() {
 				VolumeSource: v1.VolumeSource{
 					Overlay: &v1.OverlayVolumeSource{
 						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "test-pvc",
 							},
 						},
@@ -3445,8 +3446,8 @@ var _ = Describe("SetDriverCacheMode", func() {
 			Expect(domain.Spec.Devices.Disks[0].BackingStore.Type).To(Equal("file"))
 		})
 
-		It("should convert overlay volume with backing HostPath", func() {
-			vmi := api.NewMinimalVMI("testvmi")
+		It("shoujld convert overlay volume with backing HostPath", func() {
+			vmi := kvapi.NewMinimalVMI("testvmi")
 			vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
 				Name: "test",
 			})
@@ -3454,7 +3455,7 @@ var _ = Describe("SetDriverCacheMode", func() {
 				Name: "test",
 				VolumeSource: v1.VolumeSource{
 					Overlay: &v1.OverlayVolumeSource{
-						BackingHostPath: &corev1.HostPathVolumeSource{
+						BackingHostPath: &k8sv1.HostPathVolumeSource{
 							Path: "/var/lib/images/base.img",
 						},
 						BackingFormat: "qcow2",
@@ -3480,7 +3481,7 @@ var _ = Describe("SetDriverCacheMode", func() {
 		})
 
 		It("should convert overlay volume with block PVC backing", func() {
-			vmi := api.NewMinimalVMI("testvmi")
+			vmi := kvapi.NewMinimalVMI("testvmi")
 			vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
 				Name: "test",
 			})
@@ -3489,7 +3490,7 @@ var _ = Describe("SetDriverCacheMode", func() {
 				VolumeSource: v1.VolumeSource{
 					Overlay: &v1.OverlayVolumeSource{
 						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
-							PersistentVolumeClaimVolumeSource: corev1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
 								ClaimName: "block-pvc",
 							},
 						},
