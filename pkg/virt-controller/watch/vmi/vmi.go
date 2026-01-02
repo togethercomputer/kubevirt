@@ -803,7 +803,7 @@ func prepareVMIPatch(oldVMI, newVMI *virtv1.VirtualMachineInstance) *patch.Patch
 		}
 	}
 
-	// Sort network interfaces by name to ensure that the order does not affect the equality check.
+	// Sort network interfaces by name or interface name to ensure that the order does not affect the equality check.
 	// Prior to this an API patch flood would occur - see: https://github.com/kubevirt/kubevirt/issues/14442
 	cmpFunc := func(a, b virtv1.VirtualMachineInstanceNetworkInterface) int {
 		if a.Name == "" && b.Name == "" {
