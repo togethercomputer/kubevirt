@@ -3251,6 +3251,12 @@ type PodCondition struct {
 	// Type is the type of the condition.
 	// More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#pod-conditions
 	Type PodConditionType `json:"type" protobuf:"bytes,1,opt,name=type,casttype=PodConditionType"`
+	// copied from https://github.com/kubernetes/api/blob/133a39c86037e673501accd93a01467e8ab69c3a/core/v1/types.go#L3568-L3572
+	// If set, this represents the .metadata.generation that the pod condition was set based upon.
+	// This is an alpha field. Enable PodObservedGenerationTracking to be able to use this field.
+	// +featureGate=PodObservedGenerationTracking
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,7,opt,name=observedGeneration"`
 	// Status is the status of the condition.
 	// Can be True, False, Unknown.
 	// More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#pod-conditions
