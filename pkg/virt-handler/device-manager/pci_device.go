@@ -26,6 +26,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -131,6 +132,7 @@ func NewPCIDevicePlugin(pciDevices []*PCIDevice, resourceName string) *PCIDevice
 }
 
 func constructDPIdevices(pciDevices []*PCIDevice, iommuToPCIMap map[string]string) (devs []*pluginapi.Device) {
+	sort.Slice(pciDevices, func(i, j int) bool { return pciDevices[i].pciAddress < pciDevices[j].pciAddress })
 	for _, pciDevice := range pciDevices {
 		iommuToPCIMap[pciDevice.iommuGroup] = pciDevice.pciAddress
 		dpiDev := &pluginapi.Device{
