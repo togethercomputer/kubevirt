@@ -188,7 +188,9 @@ spec:
         mdevNameSelector: mdevNameSelectorValue
         resourceName: resourceNameValue
       pciHostDevices:
-      - externalResourceProvider: true
+      - disallowedPciDeviceAddresses:
+        - disallowedPciDeviceAddressesValue
+        externalResourceProvider: true
         pciVendorSelector: pciVendorSelectorValue
         resourceName: resourceNameValue
       usb:

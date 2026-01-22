@@ -15253,6 +15253,15 @@
      "resourceName"
     ],
     "properties": {
+     "disallowedPciDeviceAddresses": {
+      "description": "Concrete list of PCI devices that should NOT be detected",
+      "type": "array",
+      "items": {
+       "type": "string",
+       "default": ""
+      },
+      "x-kubernetes-list-type": "set"
+     },
      "externalResourceProvider": {
       "description": "If true, KubeVirt will leave the allocation and monitoring to an external device plugin",
       "type": "boolean"
