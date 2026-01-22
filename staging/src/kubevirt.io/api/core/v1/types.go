@@ -2839,7 +2839,8 @@ type PciHostDevice struct {
 	// external device plugin
 	ExternalResourceProvider bool `json:"externalResourceProvider,omitempty"`
 	// Concrete list of PCI devices that should NOT be detected
-	DisallowedPCIDeviceAddresses []string `json:"disallowedPciDeviceAddresses,omitempty"`
+	// +listType=set
+	DisallowedPciDeviceAddresses []string `json:"disallowedPciDeviceAddresses,omitempty"`
 }
 
 // MediatedHostDevice represents a host mediated device allowed for passthrough
