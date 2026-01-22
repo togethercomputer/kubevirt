@@ -84,7 +84,7 @@ pciHostDevices:
 		}
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find a PCI device at 0000:00:00.0
-		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
+		devices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap, nil)
 		Expect(devices).To(HaveLen(1), "only one PCI device is expected to be found")
 		Expect(devices[fakeName]).To(HaveLen(1), "only one PCI device is expected to be found")
 		Expect(devices[fakeName][0].pciID).To(Equal(fakeID))
@@ -105,7 +105,7 @@ pciHostDevices:
 		}
 		// discoverPermittedHostPCIDevices() will walk real PCI devices wherever the tests are running
 		// It's assumed here that it will find a PCI device at 0000:00:00.0
-		pciDevices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
+		pciDevices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap, nil)
 		devs := constructDPIdevices(pciDevices[fakeName], iommuToPCIMap)
 		Expect(devs[0].ID).To(Equal(fakeIommuGroup))
 		Expect(devs[0].Topology.Nodes[0].ID).To(Equal(int64(fakeNumaNode)))
