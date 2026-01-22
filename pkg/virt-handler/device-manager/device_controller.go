@@ -213,7 +213,7 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 				supportedPCIDeviceMap[vendorSelector] = pciDev.ResourceName
 				disallowedPciDeviceAddressesMap[vendorSelector] = pciDev.DisallowedPCIDeviceAddresses
 				if len(pciDev.DisallowedPCIDeviceAddresses) > 0 {
-					log.DefaultLogger().Infof("Filtering disallowed PCI device %s at address %s", pciDev.ResourceName, pciDev.DisallowedPCIDeviceAddresses)
+					log.DefaultLogger().Infof("Configured disallowed PCI addresses for %s: %v", pciDev.ResourceName, pciDev.DisallowedPCIDeviceAddresses)
 				}
 			}
 		}
