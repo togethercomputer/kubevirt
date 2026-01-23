@@ -1402,6 +1402,13 @@ var CRDsValidation map[string]string = map[string]string{
                     description: PciHostDevice represents a host PCI device allowed
                       for passthrough
                     properties:
+                      disallowedPciDeviceAddresses:
+                        description: Concrete list of PCI devices that should NOT
+                          be detected
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
                       externalResourceProvider:
                         description: |-
                           If true, KubeVirt will leave the allocation and monitoring to an

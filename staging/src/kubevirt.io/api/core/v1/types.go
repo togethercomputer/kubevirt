@@ -2838,6 +2838,9 @@ type PciHostDevice struct {
 	// If true, KubeVirt will leave the allocation and monitoring to an
 	// external device plugin
 	ExternalResourceProvider bool `json:"externalResourceProvider,omitempty"`
+	// Concrete list of PCI devices that should NOT be detected
+	// +listType=set
+	DisallowedPciDeviceAddresses []string `json:"disallowedPciDeviceAddresses,omitempty"`
 }
 
 // MediatedHostDevice represents a host mediated device allowed for passthrough

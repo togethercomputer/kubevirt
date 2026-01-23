@@ -26,6 +26,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -257,7 +258,8 @@ func (dpi *PCIDevicePlugin) healthCheck() error {
 	}
 }
 
-func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]string) map[string][]*PCIDevice {
+// disallowedPciDeviceAddressesMap maps PCI device IDs to lists of specific addresses to exclude
+func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]string, disallowedPciDeviceAddressesMap map[string][]string) map[string][]*PCIDevice {
 	initHandler()
 
 	pciDevicesMap := make(map[string][]*PCIDevice)
@@ -265,29 +267,36 @@ func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]string) ma
 		if info.IsDir() {
 			return nil
 		}
-		pciID, err := Handler.GetDevicePCIID(pciBasePath, info.Name())
+		pciAddress := info.Name()
+		pciID, err := Handler.GetDevicePCIID(pciBasePath, pciAddress)
 		if err != nil {
-			log.DefaultLogger().Reason(err).Errorf("failed get vendor:device ID for device: %s", info.Name())
+			log.DefaultLogger().Reason(err).Errorf("failed get vendor:device ID for device: %s", pciAddress)
 			return nil
 		}
 		if resourceName, supported := supportedPCIDeviceMap[pciID]; supported {
 			// check device driver
-			driver, err := Handler.GetDeviceDriver(pciBasePath, info.Name())
+			driver, err := Handler.GetDeviceDriver(pciBasePath, pciAddress)
 			if err != nil || driver != "vfio-pci" {
+				return nil
+			}
+
+			disallowedPciDeviceAddresses := disallowedPciDeviceAddressesMap[pciID]
+			if disallowedPciDeviceAddresses != nil && slices.Contains(disallowedPciDeviceAddresses, pciAddress) {
+				log.DefaultLogger().Infof("Skipping disallowed PCI device %s at address %s", resourceName, pciAddress)
 				return nil
 			}
 
 			pcidev := &PCIDevice{
 				pciID:      pciID,
-				pciAddress: info.Name(),
+				pciAddress: pciAddress,
 			}
-			iommuGroup, err := Handler.GetDeviceIOMMUGroup(pciBasePath, info.Name())
+			iommuGroup, err := Handler.GetDeviceIOMMUGroup(pciBasePath, pciAddress)
 			if err != nil {
 				return nil
 			}
 			pcidev.iommuGroup = iommuGroup
 			pcidev.driver = driver
-			pcidev.numaNode = Handler.GetDeviceNumaNode(pciBasePath, info.Name())
+			pcidev.numaNode = Handler.GetDeviceNumaNode(pciBasePath, pciAddress)
 			pciDevicesMap[resourceName] = append(pciDevicesMap[resourceName], pcidev)
 		}
 		return nil

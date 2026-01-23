@@ -200,7 +200,8 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 	}
 
 	if len(hostDevs.PciHostDevices) != 0 {
-		supportedPCIDeviceMap := make(map[string]string)
+		supportedPciDeviceMap := make(map[string]string)
+		disallowedPciDeviceAddressesMap := make(map[string][]string)
 		for _, pciDev := range hostDevs.PciHostDevices {
 			log.Log.V(4).Infof("Permitted PCI device in the cluster, ID: %s, resourceName: %s, externalProvider: %t",
 				strings.ToLower(pciDev.PCIVendorSelector),
@@ -208,10 +209,15 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() []Device {
 				pciDev.ExternalResourceProvider)
 			// do not add a device plugin for this resource if it's being provided via an external device plugin
 			if !pciDev.ExternalResourceProvider {
-				supportedPCIDeviceMap[strings.ToLower(pciDev.PCIVendorSelector)] = pciDev.ResourceName
+				pciVendorSelector := strings.ToLower(pciDev.PCIVendorSelector)
+				supportedPciDeviceMap[pciVendorSelector] = pciDev.ResourceName
+				disallowedPciDeviceAddressesMap[pciVendorSelector] = pciDev.DisallowedPciDeviceAddresses
+				if len(pciDev.DisallowedPciDeviceAddresses) > 0 {
+					log.DefaultLogger().Infof("Configured disallowed PCI addresses for %s: %v", pciDev.ResourceName, pciDev.DisallowedPciDeviceAddresses)
+				}
 			}
 		}
-		for pciResourceName, pciDevices := range discoverPermittedHostPCIDevices(supportedPCIDeviceMap) {
+		for pciResourceName, pciDevices := range discoverPermittedHostPCIDevices(supportedPciDeviceMap, disallowedPciDeviceAddressesMap) {
 			log.Log.V(4).Infof("Discovered PCIs %d devices on the node for the resource: %s", len(pciDevices), pciResourceName)
 			// add a device plugin only for new devices
 			permittedDevices = append(permittedDevices, NewPCIDevicePlugin(pciDevices, pciResourceName))

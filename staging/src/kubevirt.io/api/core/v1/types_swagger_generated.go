@@ -916,10 +916,11 @@ func (USBSelector) SwaggerDoc() map[string]string {
 
 func (PciHostDevice) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"":                         "PciHostDevice represents a host PCI device allowed for passthrough",
-		"pciVendorSelector":        "The vendor_id:product_id tuple of the PCI device",
-		"resourceName":             "The name of the resource that is representing the device. Exposed by\na device plugin and requested by VMs. Typically of the form\nvendor.com/product_name",
-		"externalResourceProvider": "If true, KubeVirt will leave the allocation and monitoring to an\nexternal device plugin",
+		"":                             "PciHostDevice represents a host PCI device allowed for passthrough",
+		"pciVendorSelector":            "The vendor_id:product_id tuple of the PCI device",
+		"resourceName":                 "The name of the resource that is representing the device. Exposed by\na device plugin and requested by VMs. Typically of the form\nvendor.com/product_name",
+		"externalResourceProvider":     "If true, KubeVirt will leave the allocation and monitoring to an\nexternal device plugin",
+		"disallowedPciDeviceAddresses": "Concrete list of PCI devices that should NOT be detected\n+listType=set",
 	}
 }
 
