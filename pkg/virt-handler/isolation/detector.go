@@ -23,6 +23,7 @@ package isolation
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"runtime"
 	"syscall"
@@ -123,15 +124,11 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 			continue
 		}
 
-		// make the best estimate for memory required by libvirt
-		memlockSize := services.GetMemoryOverhead(vm, runtime.GOARCH, additionalOverheadRatio)
-		// Add base memory requested for the VM
-		vmiMemoryReq := vm.Spec.Domain.Resources.Requests.Memory()
-		memlockSize.Add(*resource.NewScaledQuantity(vmiMemoryReq.ScaledValue(resource.Kilo), resource.Kilo))
+		memlockSize := getMemlockSize(vm, additionalOverheadRatio)
 
-		err = setProcessMemoryLockRLimit(process.Pid(), memlockSize.Value())
+		err = setProcessMemoryLockRLimit(process.Pid(), memlockSize)
 		if err != nil {
-			return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", process.Pid(), memlockSize.Value(), err)
+			return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", process.Pid(), memlockSize, err)
 		}
 		// we assume a single process should match
 		break
@@ -157,19 +154,31 @@ func AdjustQemuProcessMemoryLimits(podIsoDetector PodIsolationDetector, vmi *v1.
 		return err
 	}
 	qemuProcessID := qemuProcess.Pid()
-	// make the best estimate for memory required by libvirt
-	memlockSize := services.GetMemoryOverhead(vmi, runtime.GOARCH, additionalOverheadRatio)
-	// Add base memory requested for the VM
-	vmiMemoryReq := vmi.Spec.Domain.Resources.Requests.Memory()
-	memlockSize.Add(*resource.NewScaledQuantity(vmiMemoryReq.ScaledValue(resource.Kilo), resource.Kilo))
+	memlockSize := getMemlockSize(vmi, additionalOverheadRatio)
 
-	if err := setProcessMemoryLockRLimit(qemuProcessID, memlockSize.Value()); err != nil {
-		return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", qemuProcessID, memlockSize.Value(), err)
+	if err := setProcessMemoryLockRLimit(qemuProcessID, memlockSize); err != nil {
+		return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", qemuProcessID, memlockSize, err)
 	}
 	log.Log.V(5).Object(vmi).Infof("set process %+v memlock rlimits to: Cur: %[2]d Max:%[2]d",
-		qemuProcess, memlockSize.Value())
+		qemuProcess, memlockSize)
 
 	return nil
+}
+
+// getMemlockSize returns the memlock size for the given VMI.
+// For VFIO VMs, it returns unlimited (math.MaxInt64) because PCI device BAR sizes
+// vary greatly (especially for GPUs) and cannot be accurately estimated.
+// Libvirt calculates its own memlock requirement based on actual device BAR sizes,
+// so attempting to estimate here leads to "Operation not permitted" errors when
+// libvirt tries to set a higher limit than what virt-handler calculated.
+func getMemlockSize(vmi *v1.VirtualMachineInstance, additionalOverheadRatio *string) int64 {
+	if util.IsVFIOVMI(vmi) {
+		return math.MaxInt64
+	}
+	memlockSize := services.GetMemoryOverhead(vmi, runtime.GOARCH, additionalOverheadRatio)
+	vmiMemoryReq := vmi.Spec.Domain.Resources.Requests.Memory()
+	memlockSize.Add(*resource.NewScaledQuantity(vmiMemoryReq.ScaledValue(resource.Kilo), resource.Kilo))
+	return memlockSize.Value()
 }
 
 var qemuProcessExecutablePrefixes = []string{"qemu-system", "qemu-kvm"}
