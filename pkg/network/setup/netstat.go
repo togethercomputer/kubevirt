@@ -104,7 +104,7 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 
 	interfacesStatus := ifacesStatusFromDomainInterfaces(domain.Spec.Devices.Interfaces)
 	interfacesStatus = append(interfacesStatus,
-		sriovIfacesStatusFromDomainHostDevices(domain.Spec.Devices.HostDevices, vmiInterfacesSpecByName)...,
+		sriovIfacesStatusFromDomainHostDevices(domain.Spec.Devices.HostDevices, vmi.Spec.Domain.Devices.Interfaces)...,
 	)
 
 	var err error
@@ -319,7 +319,13 @@ func linkStateFromDomain(linkState *api.LinkState) string {
 	return linkState.State
 }
 
-func sriovIfacesStatusFromDomainHostDevices(hostDevices []api.HostDevice, vmiIfacesSpecByName map[string]v1.Interface) []v1.VirtualMachineInstanceNetworkInterface {
+func sriovIfacesStatusFromDomainHostDevices(hostDevices []api.HostDevice, vmiIfacesSpec []v1.Interface) []v1.VirtualMachineInstanceNetworkInterface {
+	vmiIfacesSpecByName := netvmispec.IndexInterfaceSpecByName(vmiIfacesSpec)
+	specOrder := make(map[string]int, len(vmiIfacesSpec))
+	for i := range vmiIfacesSpec {
+		specOrder[vmiIfacesSpec[i].Name] = i
+	}
+
 	var vmiStatusIfaces []v1.VirtualMachineInstanceNetworkInterface
 
 	for _, hostDevice := range filterHostDevicesByAlias(hostDevices, deviceinfo.SRIOVAliasPrefix) {
@@ -332,6 +338,23 @@ func sriovIfacesStatusFromDomainHostDevices(hostDevices []api.HostDevice, vmiIfa
 		}
 		vmiStatusIfaces = append(vmiStatusIfaces, vmiStatusIface)
 	}
+
+	// The domain host-device order does not necessarily match the VMI spec order (it
+	// follows PCI-address pool / libvirt slot assignment). Order the SR-IOV interface
+	// statuses by VMI spec order so virt-handler agrees with the virt-controller's
+	// spec-ordered status (pkg/network/controllers/vmi.go) and avoids status churn.
+	// Host devices with no matching spec interface (should not happen) sort last,
+	// keeping their original relative order.
+	specIndex := func(name string) int {
+		if idx, exists := specOrder[name]; exists {
+			return idx
+		}
+		return len(vmiIfacesSpec)
+	}
+	slices.SortStableFunc(vmiStatusIfaces, func(a, b v1.VirtualMachineInstanceNetworkInterface) int {
+		return specIndex(a.Name) - specIndex(b.Name)
+	})
+
 	return vmiStatusIfaces
 }
 

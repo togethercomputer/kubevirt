@@ -1147,6 +1147,66 @@ var _ = Describe("netstat", func() {
 		}
 	})
 
+	It("SR-IOV interfaces are ordered by VMI spec order regardless of domain host-device order (deterministic)", func() {
+		const (
+			primaryNetworkName = "primary"
+			primaryPodIPv4     = "1.1.1.1"
+			primaryMAC         = "1C:CE:C0:01:BE:E7"
+
+			sriovNet1 = "sriov-net-1"
+			sriovNet2 = "sriov-net-2"
+			sriovNet3 = "sriov-net-3"
+		)
+
+		// Primary pod network, backed by the domain, so it is reported and pinned first.
+		Expect(
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, primaryMAC),
+				primaryPodIPv4,
+			),
+		).To(Succeed())
+
+		// Three SR-IOV secondaries declared in spec order 1, 2, 3.
+		for _, name := range []string{sriovNet1, sriovNet2, sriovNet3} {
+			setup.Vmi.Spec.Domain.Devices.Interfaces = append(setup.Vmi.Spec.Domain.Devices.Interfaces,
+				newVMISpecIfaceWithSRIOVBinding(name))
+			setup.Vmi.Spec.Networks = append(setup.Vmi.Spec.Networks, newVMISpecMultusNetwork(name))
+		}
+
+		// The domain reports the SR-IOV host devices in a different order than the spec
+		// (2, 3, 1) — as happens in practice due to PCI-address / libvirt slot assignment.
+		for _, name := range []string{sriovNet2, sriovNet3, sriovNet1} {
+			setup.Domain.Spec.Devices.HostDevices = append(setup.Domain.Spec.Devices.HostDevices,
+				api.HostDevice{Alias: api.NewUserDefinedAlias(netsriov.SRIOVAliasPrefix + name)})
+		}
+
+		expectedStatus := []v1.VirtualMachineInstanceNetworkInterface{
+			{
+				Name:       primaryNetworkName,
+				IP:         primaryPodIPv4,
+				IPs:        []string{primaryPodIPv4},
+				MAC:        primaryMAC,
+				InfoSource: netvmispec.InfoSourceDomain,
+				QueueCount: netsetup.DefaultInterfaceQueueCount,
+				LinkState:  linkStateUp,
+			},
+			{Name: sriovNet1, InfoSource: netvmispec.InfoSourceDomain},
+			{Name: sriovNet2, InfoSource: netvmispec.InfoSourceDomain},
+			{Name: sriovNet3, InfoSource: netvmispec.InfoSourceDomain},
+		}
+
+		// Determinism guard: repeated reconciles must produce identical ordering. With the
+		// old code the SR-IOV statuses follow the domain host-device order (2, 3, 1) and
+		// churn against the virt-controller's spec order; with the fix they are stable.
+		for i := 0; i < 20; i++ {
+			Expect(setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)).To(Succeed())
+			Expect(setup.Vmi.Status.Interfaces).To(Equal(expectedStatus),
+				fmt.Sprintf("iteration %d: SR-IOV ifaces must follow VMI spec order", i))
+		}
+	})
+
 	It("run status and expect 1 attached iface & 1 detached iface to be reported based on multus status and guest-agent data", func() {
 		const (
 			primaryNetworkName = "primary"
