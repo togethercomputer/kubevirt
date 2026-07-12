@@ -50,6 +50,14 @@ const (
 	BurstReplicas uint = 250
 )
 
+// VirtControllerFieldManager is the field manager name recorded in an object's
+// managedFields when virt-controller patches it. It is set explicitly so other
+// code can reason about field ownership deterministically.
+//
+// NOTE: pkg/network/pod/annotations mirrors this value in a local constant
+// (virtControllerFieldManager) to avoid importing this package; keep them in sync.
+const VirtControllerFieldManager = "virt-controller"
+
 // Reasons for vmi events
 const (
 	// FailedCreatePodReason is added in an event and in a vmi controller condition
@@ -588,7 +596,7 @@ func SyncPodAnnotations(clientset kubecli.KubevirtClient, pod *k8sv1.Pod, newAnn
 	if err != nil {
 		return pod, fmt.Errorf("failed to generate patch payload: %w", err)
 	}
-	patchedPod, err := clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.JSONPatchType, patchBytes, metav1.PatchOptions{})
+	patchedPod, err := clientset.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name, types.JSONPatchType, patchBytes, metav1.PatchOptions{FieldManager: VirtControllerFieldManager})
 	if err != nil {
 		log.Log.Object(pod).Errorf("failed to sync pod annotations: %v", err)
 		return nil, err
