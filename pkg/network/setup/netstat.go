@@ -121,7 +121,7 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 		interfacesStatus = movePrimaryIfaceStatusToFront(interfacesStatus, primaryNetwork.Name)
 	}
 
-	interfacesStatus = ifacesStatusFromMultus(interfacesStatus, multusStatusNetworksByName, vmiInterfacesSpecByName)
+	interfacesStatus = ifacesStatusFromMultus(interfacesStatus, multusStatusNetworksByName, vmi.Spec.Domain.Devices.Interfaces)
 
 	interfacesStatus = restorePodIfaceNames(interfacesStatus, vmi.Status.Interfaces)
 	vmi.Status.Interfaces = interfacesStatus
@@ -194,19 +194,31 @@ func movePrimaryIfaceStatusToFront(
 func ifacesStatusFromMultus(
 	interfacesStatus []v1.VirtualMachineInstanceNetworkInterface,
 	multusStatusNetworksByName map[string]v1.VirtualMachineInstanceNetworkInterface,
-	vmIfacesSpecByName map[string]v1.Interface,
+	vmiIfacesSpec []v1.Interface,
 ) []v1.VirtualMachineInstanceNetworkInterface {
+	// Add the multus info-source to interfaces already present in the status.
+	// Iteration order is irrelevant here: only existing entries are mutated in place.
 	for multusIfaceName := range multusStatusNetworksByName {
-		ifaceStatus := netvmispec.LookupInterfaceStatusByName(interfacesStatus, multusIfaceName)
-		_, existInSpec := vmIfacesSpecByName[multusIfaceName]
-		if existInSpec && ifaceStatus == nil {
-			interfacesStatus = append(interfacesStatus, v1.VirtualMachineInstanceNetworkInterface{
-				Name:       multusIfaceName,
-				InfoSource: netvmispec.InfoSourceMultusStatus,
-			})
-		} else if ifaceStatus != nil {
+		if ifaceStatus := netvmispec.LookupInterfaceStatusByName(interfacesStatus, multusIfaceName); ifaceStatus != nil {
 			ifaceStatus.InfoSource = netvmispec.AddInfoSource(ifaceStatus.InfoSource, netvmispec.InfoSourceMultusStatus)
 		}
+	}
+
+	// Append interfaces reported only by multus (present in spec and in the multus
+	// network-status, but not yet in the status) in VMI spec order. This keeps
+	// vmi.Status.Interfaces deterministic across reconciles and aligned with the
+	// virt-controller ordering (pkg/network/controllers/vmi.go), avoiding status churn.
+	for _, iface := range vmiIfacesSpec {
+		if _, inMultus := multusStatusNetworksByName[iface.Name]; !inMultus {
+			continue
+		}
+		if netvmispec.LookupInterfaceStatusByName(interfacesStatus, iface.Name) != nil {
+			continue
+		}
+		interfacesStatus = append(interfacesStatus, v1.VirtualMachineInstanceNetworkInterface{
+			Name:       iface.Name,
+			InfoSource: netvmispec.InfoSourceMultusStatus,
+		})
 	}
 	return interfacesStatus
 }

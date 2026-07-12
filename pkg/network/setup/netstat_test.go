@@ -1077,6 +1077,76 @@ var _ = Describe("netstat", func() {
 		)
 	})
 
+	It("secondary multus-only interfaces are ordered by VMI spec order (deterministic)", func() {
+		const (
+			primaryNetworkName = "primary"
+			primaryPodIPv4     = "1.1.1.1"
+			primaryMAC         = "1C:CE:C0:01:BE:E7"
+
+			// Declared in a deliberately non-alphabetical spec order so the assertion is
+			// meaningful: spec order (net-c, net-a, net-b) differs from alphabetical order.
+			secNetC = "net-c"
+			secNetA = "net-a"
+			secNetB = "net-b"
+		)
+
+		// Primary pod network, backed by the domain, so it is reported and pinned first.
+		Expect(
+			setup.addNetworkInterface(
+				newVMISpecIfaceWithBridgeBinding(primaryNetworkName),
+				newVMISpecPodNetwork(primaryNetworkName),
+				newDomainSpecIface(primaryNetworkName, primaryMAC),
+				primaryPodIPv4,
+			),
+		).To(Succeed())
+
+		// Three secondary multus networks, added to the VMI spec *only* (not to the domain),
+		// so they can enter the status exclusively through the append branch of
+		// ifacesStatusFromMultus.
+		for _, name := range []string{secNetC, secNetA, secNetB} {
+			setup.Vmi.Spec.Domain.Devices.Interfaces = append(setup.Vmi.Spec.Domain.Devices.Interfaces,
+				newVMISpecIfaceWithBridgeBinding(name))
+			setup.Vmi.Spec.Networks = append(setup.Vmi.Spec.Networks, newVMISpecMultusNetwork(name))
+		}
+
+		// The previous status carries the secondaries as multus-status-only entries. This
+		// populates multusStatusNetworksByName and drives them through the append branch
+		// (they are not reported by the domain / guest-agent). The stored order is
+		// scrambled on purpose to prove the output order derives from the spec, not from
+		// the previous status.
+		setup.Vmi.Status.Interfaces = []v1.VirtualMachineInstanceNetworkInterface{
+			{Name: primaryNetworkName},
+			{Name: secNetB, InfoSource: netvmispec.InfoSourceMultusStatus},
+			{Name: secNetC, InfoSource: netvmispec.InfoSourceMultusStatus},
+			{Name: secNetA, InfoSource: netvmispec.InfoSourceMultusStatus},
+		}
+
+		expectedStatus := []v1.VirtualMachineInstanceNetworkInterface{
+			{
+				Name:       primaryNetworkName,
+				IP:         primaryPodIPv4,
+				IPs:        []string{primaryPodIPv4},
+				MAC:        primaryMAC,
+				InfoSource: netvmispec.InfoSourceDomain,
+				QueueCount: netsetup.DefaultInterfaceQueueCount,
+				LinkState:  linkStateUp,
+			},
+			{Name: secNetC, InfoSource: netvmispec.InfoSourceMultusStatus},
+			{Name: secNetA, InfoSource: netvmispec.InfoSourceMultusStatus},
+			{Name: secNetB, InfoSource: netvmispec.InfoSourceMultusStatus},
+		}
+
+		// Determinism guard: repeated reconciles must produce identical ordering. Feeding
+		// the result back as the previous status mirrors the real self-perpetuating
+		// reconcile loop. With the old map-range append this is flaky by construction;
+		// with the spec-ordered append it is stable.
+		for i := 0; i < 20; i++ {
+			Expect(setup.NetStat.UpdateStatus(setup.Vmi, setup.Domain)).To(Succeed())
+			Expect(setup.Vmi.Status.Interfaces).To(Equal(expectedStatus),
+				fmt.Sprintf("iteration %d: secondary multus-only ifaces must follow VMI spec order", i))
+		}
+	})
+
 	It("run status and expect 1 attached iface & 1 detached iface to be reported based on multus status and guest-agent data", func() {
 		const (
 			primaryNetworkName = "primary"
