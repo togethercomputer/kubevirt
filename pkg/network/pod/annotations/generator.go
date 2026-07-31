@@ -20,6 +20,8 @@
 package annotations
 
 import (
+	"encoding/json"
+
 	k8scorev1 "k8s.io/api/core/v1"
 
 	networkv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
@@ -127,7 +129,52 @@ func (g Generator) GenerateFromActivePod(vmi *v1.VirtualMachineInstance, pod *k8
 	return annotations
 }
 
+// virtControllerFieldManager mirrors controller.VirtControllerFieldManager: the
+// field manager name virt-controller records when it patches a pod. It is
+// duplicated here (rather than imported) to avoid pulling the heavy
+// pkg/controller package into the network annotations dependency graph; the
+// value is a stable managedFields wire contract.
+const virtControllerFieldManager = "virt-controller"
+
+// multusNetworksAnnotationOwnedByAnotherManager reports whether the multus
+// networks annotation on the pod is currently owned (in managedFields) by a
+// field manager other than virt-controller. In that case an external controller
+// (e.g. ib-kubernetes, which injects InfiniBand GUIDs) manages the annotation,
+// and virt-controller must not overwrite it.
+func multusNetworksAnnotationOwnedByAnotherManager(pod *k8scorev1.Pod) bool {
+	const annotationField = "f:" + networkv1.NetworkAttachmentAnnot
+	for _, mf := range pod.ManagedFields {
+		if mf.Manager == virtControllerFieldManager || mf.FieldsV1 == nil {
+			continue
+		}
+		var fields map[string]interface{}
+		if err := json.Unmarshal(mf.FieldsV1.Raw, &fields); err != nil {
+			continue
+		}
+		metadata, ok := fields["f:metadata"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		annotations, ok := metadata["f:annotations"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, owned := annotations[annotationField]; owned {
+			return true
+		}
+	}
+	return false
+}
+
 func (g Generator) generateMultusAnnotation(vmi *v1.VirtualMachineInstance, pod *k8scorev1.Pod) (string, bool) {
+	const logLevel = 4
+
+	if multusNetworksAnnotationOwnedByAnotherManager(pod) {
+		log.Log.Object(pod).V(logLevel).Infof(
+			"skipping multus network annotation update: annotation is owned by another field manager")
+		return "", false
+	}
+
 	vmiSpecIfaces, vmiSpecNets, ifaceChangeRequired := ifacesAndNetsForMultusAnnotationUpdate(vmi)
 	if !ifaceChangeRequired {
 		return "", false
@@ -147,7 +194,6 @@ func (g Generator) generateMultusAnnotation(vmi *v1.VirtualMachineInstance, pod 
 
 	currentMultusAnnotation := pod.Annotations[networkv1.NetworkAttachmentAnnot]
 
-	const logLevel = 4
 	log.Log.Object(pod).V(logLevel).Infof(
 		"current multus annotation for pod: %s; updated multus annotation for pod with: %s",
 		currentMultusAnnotation,

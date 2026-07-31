@@ -764,6 +764,83 @@ var _ = Describe("Annotations Generator", func() {
 			Expect(annotations).To(HaveKeyWithValue(networkv1.NetworkAttachmentAnnot, ""))
 		})
 	})
+
+	Context("Multus annotation field ownership", func() {
+		const (
+			sriovNetworkName = "sriov-net"
+			sriovNADName     = "default/sriov"
+
+			// enrichedMultusNetworksAnnotation stands in for the value an external
+			// controller (e.g. ib-kubernetes) writes: the base multus network list
+			// enriched with data KubeVirt never regenerates from the VMI spec.
+			enrichedMultusNetworksAnnotation = `[{"name":"sriov","namespace":"default",` +
+				`"infiniband-guid":"02:00:00:00:00:00:00:01",` +
+				`"cni-args":{"mellanox.infiniband.app":"configured"}}]`
+
+			networkStatusWithPrimaryAndSRIOVSecondaryNet = `[` +
+				`{"name":"k8s-pod-network","ips":["10.244.196.146"],"default":true,"dns":{}},` +
+				`{"name":"default/sriov","interface":"pod778c553efa0","dns":{}}` +
+				`]`
+		)
+
+		// newVMIWithUnpluggedSRIOVIface reproduces the reported scenario: a primary
+		// pod network plus a single SR-IOV interface that is not yet reflected in
+		// vmi.Status.Interfaces. In this state generateMultusAnnotation would
+		// otherwise recompute the multus annotation down to "" and clear it.
+		newVMIWithUnpluggedSRIOVIface := func() *v1.VirtualMachineInstance {
+			return libvmi.New(
+				libvmi.WithNamespace(testNamespace),
+				libvmi.WithInterface(*v1.DefaultBridgeNetworkInterface()),
+				libvmi.WithInterface(libvmi.InterfaceDeviceWithSRIOVBinding(sriovNetworkName)),
+				libvmi.WithNetwork(v1.DefaultPodNetwork()),
+				libvmi.WithNetwork(libvmi.MultusNetwork(sriovNetworkName, sriovNADName)),
+			)
+		}
+
+		managedFieldsOwningNetworksAnnotation := func(manager string) []metav1.ManagedFieldsEntry {
+			return []metav1.ManagedFieldsEntry{{
+				Manager:   manager,
+				Operation: metav1.ManagedFieldsOperationUpdate,
+				FieldsV1: &metav1.FieldsV1{
+					Raw: []byte(`{"f:metadata":{"f:annotations":{"f:k8s.v1.cni.cncf.io/networks":{}}}}`),
+				},
+			}}
+		}
+
+		It("should not update the multus annotation when another field manager owns it", func() {
+			vmi := newVMIWithUnpluggedSRIOVIface()
+
+			pod := newStubVirtLauncherPod(vmi, map[string]string{
+				networkv1.NetworkAttachmentAnnot: enrichedMultusNetworksAnnotation,
+				networkv1.NetworkStatusAnnot:     networkStatusWithPrimaryAndSRIOVSecondaryNet,
+			})
+			pod.ManagedFields = managedFieldsOwningNetworksAnnotation("ib-kubernetes")
+
+			generator := annotations.NewGenerator(stubClusterConfig{})
+			actualAnnotations := generator.GenerateFromActivePod(vmi, pod)
+
+			Expect(actualAnnotations).ToNot(HaveKey(networkv1.NetworkAttachmentAnnot))
+		})
+
+		DescribeTable("should update the multus annotation when it is not owned by another field manager",
+			func(managedFields []metav1.ManagedFieldsEntry) {
+				vmi := newVMIWithUnpluggedSRIOVIface()
+
+				pod := newStubVirtLauncherPod(vmi, map[string]string{
+					networkv1.NetworkAttachmentAnnot: enrichedMultusNetworksAnnotation,
+					networkv1.NetworkStatusAnnot:     networkStatusWithPrimaryAndSRIOVSecondaryNet,
+				})
+				pod.ManagedFields = managedFields
+
+				generator := annotations.NewGenerator(stubClusterConfig{})
+				actualAnnotations := generator.GenerateFromActivePod(vmi, pod)
+
+				Expect(actualAnnotations).To(HaveKeyWithValue(networkv1.NetworkAttachmentAnnot, ""))
+			},
+			Entry("when virt-controller owns the annotation", managedFieldsOwningNetworksAnnotation("virt-controller")),
+			Entry("when no field manager owns the annotation", nil),
+		)
+	})
 })
 
 func newMultusDefaultPodNetwork(name, networkAttachmentDefinitionName string) *v1.Network {
