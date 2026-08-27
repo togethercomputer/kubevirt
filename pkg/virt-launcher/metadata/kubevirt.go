@@ -35,9 +35,6 @@ func LoadKubevirtMetadata(metadataCache *Cache) api.KubeVirtMetadata {
 	if value, exists := metadataCache.GracePeriod.Load(); exists {
 		kubevirtMetadata.GracePeriod = &value
 	}
-	if value, exists := metadataCache.StartingUp.Load(); exists {
-		kubevirtMetadata.StartingUp = &value
-	}
 	if value, exists := metadataCache.Migration.Load(); exists {
 		kubevirtMetadata.Migration = &value
 	}
