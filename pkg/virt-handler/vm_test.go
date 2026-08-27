@@ -3156,6 +3156,34 @@ var _ = Describe("VirtualMachineInstance", func() {
 	})
 
 	Context("launcher client verification in sync", func() {
+		It("should treat domain as alive when Shutoff with StartingUp true during GPU passthrough boot", func() {
+			vmi := libvmi.New(
+				libvmi.WithName("testvmi"),
+				libvmi.WithNamespace(metav1.NamespaceDefault),
+				libvmi.WithUID(vmiTestUUID),
+			)
+			vmi.Status.Phase = v1.Scheduled
+			vmi = addActivePods(vmi, podTestUUID, host)
+
+			domain := api.NewMinimalDomainWithUUID("testvmi", vmiTestUUID)
+			domain.Status.Status = api.Shutoff
+			domain.Status.Reason = api.ReasonUnknown
+			domain.Spec.Metadata.KubeVirt.StartingUp = pointer.P(true)
+
+			launcherClientManager := &launcherclients.MockLauncherClientManager{
+				Client:      client,
+				Initialized: true,
+			}
+			controller.launcherClients = launcherClientManager
+
+			addVMI(vmi, domain)
+
+			// Domain is Shutoff/Unknown but StartingUp=true, so domainAlive should be true.
+			// The domain must NOT be deleted -- the VM is still booting (e.g. VFIO/IOMMU init).
+			// Phase mismatch (Scheduled vs Failed) means shouldUpdate=false, so sync is a no-op.
+			sanityExecute()
+		})
+
 		It("should set domainAlive to false when GetVerifiedLauncherClient fails", func() {
 			vmi := libvmi.New(
 				libvmi.WithName("testvmi"),
