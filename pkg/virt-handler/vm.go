@@ -1432,7 +1432,7 @@ func (c *VirtualMachineController) sync(key string,
 		shouldDelete = true
 	}
 
-	if !domainAlive && domainExists && !vmi.IsFinal() {
+	if !domainAlive && domainExists && !vmi.IsFinal() && !vmi.IsScheduled() {
 		c.logger.Object(vmi).V(3).Info("Deleting inactive domain for vmi.")
 		shouldDelete = true
 	}

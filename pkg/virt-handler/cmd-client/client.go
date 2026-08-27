@@ -123,7 +123,7 @@ type VirtLauncherClient struct {
 
 const (
 	shortTimeout    time.Duration = 5 * time.Second
-	longTimeout     time.Duration = 20 * time.Second
+	longTimeout     time.Duration = 60 * time.Second
 	extendedTimeout time.Duration = 60 * time.Second
 )
 
