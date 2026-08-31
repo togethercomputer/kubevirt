@@ -24,6 +24,7 @@ package device_manager
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -209,6 +210,24 @@ func waitForGRPCServer(socketPath string, timeout time.Duration) error {
 	}
 	conn.Close()
 	return nil
+}
+
+func newDevicePluginGRPCServer() *grpc.Server {
+	return grpc.NewServer(grpc.WaitForHandlers(true))
+}
+
+func registrationContext(stop <-chan struct{}) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), connectionTimeout)
+	if stop != nil {
+		go func() {
+			select {
+			case <-stop:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+	return ctx, cancel
 }
 
 // dial establishes the gRPC communication with the registered device plugin.
