@@ -49,7 +49,7 @@ var _ = Describe("Generic Device", func() {
 
 		errChan := make(chan error, 1)
 		go func(errChan chan error) {
-			errChan <- dpi.healthCheck()
+			errChan <- dpi.healthCheck(newTestHealthWatcher(dpi.socketPath))
 		}(errChan)
 		Consistently(func() string {
 			return dpi.devs[0].Health
@@ -63,7 +63,7 @@ var _ = Describe("Generic Device", func() {
 
 		os.OpenFile(dpi.socketPath, os.O_RDONLY|os.O_CREATE, 0666)
 
-		go dpi.healthCheck()
+		go dpi.healthCheck(newTestHealthWatcher(dpi.socketPath))
 		Expect(dpi.devs[0].Health).To(Equal(pluginapi.Healthy))
 
 		time.Sleep(1 * time.Second)
