@@ -177,11 +177,9 @@ func (dpi *DevicePluginBase) Allocate(ctx context.Context, r *pluginapi.Allocate
 }
 
 func (dpi *DevicePluginBase) stopDevicePlugin() error {
-	defer func() {
-		if !IsChanClosed(dpi.done) {
-			close(dpi.done)
-		}
-	}()
+	if !IsChanClosed(dpi.done) {
+		close(dpi.done)
+	}
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	select {
@@ -214,7 +212,8 @@ func (dpi *DevicePluginBase) setInitialized(initialized bool) {
 }
 
 func (dpi *DevicePluginBase) register() error {
-	conn, err := gRPCConnect(pluginapi.KubeletSocket, connectionTimeout)
+	kubeletSocket := filepath.Join(filepath.Dir(dpi.socketPath), filepath.Base(pluginapi.KubeletSocket))
+	conn, err := gRPCConnect(kubeletSocket, connectionTimeout)
 	if err != nil {
 		return err
 	}
@@ -227,7 +226,9 @@ func (dpi *DevicePluginBase) register() error {
 		ResourceName: dpi.resourceName,
 	}
 
-	_, err = client.Register(context.Background(), reqt)
+	ctx, cancel := registrationContext(dpi.stop)
+	defer cancel()
+	_, err = client.Register(ctx, reqt)
 	if err != nil {
 		return err
 	}

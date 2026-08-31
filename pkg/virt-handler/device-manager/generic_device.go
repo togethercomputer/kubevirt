@@ -130,7 +130,7 @@ func (dpi *GenericDevicePlugin) Start(stop <-chan struct{}) (err error) {
 		return fmt.Errorf("error creating GRPC server socket: %v", err)
 	}
 
-	dpi.server = grpc.NewServer([]grpc.ServerOption{}...)
+	dpi.server = newDevicePluginGRPCServer()
 	defer dpi.stopDevicePlugin()
 
 	pluginapi.RegisterDevicePluginServer(dpi.server, dpi)
@@ -146,13 +146,27 @@ func (dpi *GenericDevicePlugin) Start(stop <-chan struct{}) (err error) {
 		return fmt.Errorf("error starting the GRPC server: %v", err)
 	}
 
+	socketDir := filepath.Dir(dpi.socketPath)
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to creating a fsnotify watcher: %v", err)
+	}
+	if err = watcher.Add(socketDir); err != nil {
+		_ = watcher.Close()
+		return fmt.Errorf("failed to add the device-plugin kubelet path to the watcher: %v", err)
+	}
+	if _, err = os.Stat(dpi.socketPath); err != nil {
+		_ = watcher.Close()
+		return fmt.Errorf("failed to stat the device-plugin socket: %v", err)
+	}
 	err = dpi.register()
 	if err != nil {
+		_ = watcher.Close()
 		return fmt.Errorf("error registering with device plugin manager: %v", err)
 	}
 
 	go func() {
-		errChan <- dpi.healthCheck()
+		errChan <- dpi.healthCheck(watcher)
 	}()
 
 	dpi.setInitialized(true)
@@ -164,11 +178,9 @@ func (dpi *GenericDevicePlugin) Start(stop <-chan struct{}) (err error) {
 
 // Stop stops the gRPC server
 func (dpi *GenericDevicePlugin) stopDevicePlugin() error {
-	defer func() {
-		if !IsChanClosed(dpi.done) {
-			close(dpi.done)
-		}
-	}()
+	if !IsChanClosed(dpi.done) {
+		close(dpi.done)
+	}
 
 	// Give the device plugin one second to properly deregister
 	ticker := time.NewTicker(1 * time.Second)
@@ -184,7 +196,8 @@ func (dpi *GenericDevicePlugin) stopDevicePlugin() error {
 
 // Register registers the device plugin for the given resourceName with Kubelet.
 func (dpi *GenericDevicePlugin) register() error {
-	conn, err := gRPCConnect(pluginapi.KubeletSocket, connectionTimeout)
+	kubeletSocket := filepath.Join(filepath.Dir(dpi.socketPath), filepath.Base(pluginapi.KubeletSocket))
+	conn, err := gRPCConnect(kubeletSocket, connectionTimeout)
 	if err != nil {
 		return err
 	}
@@ -197,7 +210,9 @@ func (dpi *GenericDevicePlugin) register() error {
 		ResourceName: dpi.resourceName,
 	}
 
-	_, err = client.Register(context.Background(), reqt)
+	ctx, cancel := registrationContext(dpi.stop)
+	defer cancel()
+	_, err = client.Register(ctx, reqt)
 	if err != nil {
 		return err
 	}
@@ -273,12 +288,8 @@ func (dpi *GenericDevicePlugin) PreStartContainer(_ context.Context, _ *pluginap
 	return res, nil
 }
 
-func (dpi *GenericDevicePlugin) healthCheck() error {
+func (dpi *GenericDevicePlugin) healthCheck(watcher *fsnotify.Watcher) error {
 	logger := log.DefaultLogger()
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("failed to creating a fsnotify watcher: %v", err)
-	}
 	defer watcher.Close()
 
 	// This way we don't have to mount /dev from the node
@@ -286,7 +297,7 @@ func (dpi *GenericDevicePlugin) healthCheck() error {
 
 	// Start watching the files before we check for their existence to avoid races
 	dirName := filepath.Dir(devicePath)
-	err = watcher.Add(dirName)
+	err := watcher.Add(dirName)
 
 	if err != nil {
 		return fmt.Errorf("failed to add the device root path to the watcher: %v", err)
@@ -302,16 +313,8 @@ func (dpi *GenericDevicePlugin) healthCheck() error {
 	}
 	logger.Infof("device '%s' is present.", dpi.devicePath)
 
-	dirName = filepath.Dir(dpi.socketPath)
-	err = watcher.Add(dirName)
-
-	if err != nil {
-		return fmt.Errorf("failed to add the device-plugin kubelet path to the watcher: %v", err)
-	}
-	_, err = os.Stat(dpi.socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat the device-plugin socket: %v", err)
-	}
+	socketDir := filepath.Dir(dpi.socketPath)
+	kubeletSocketPath := filepath.Join(socketDir, filepath.Base(pluginapi.KubeletSocket))
 
 	for {
 		select {
@@ -330,8 +333,15 @@ func (dpi *GenericDevicePlugin) healthCheck() error {
 					logger.Infof("monitored device %s disappeared", dpi.deviceName)
 					dpi.health <- deviceHealth{Health: pluginapi.Unhealthy}
 				}
-			} else if event.Name == dpi.socketPath && event.Op == fsnotify.Remove {
+			} else if event.Name == dpi.socketPath && event.Op.Has(fsnotify.Remove) {
 				logger.Infof("device socket file for device %s was removed, kubelet probably restarted.", dpi.deviceName)
+				return nil
+			} else if event.Name == kubeletSocketPath && event.Op.Has(fsnotify.Create) {
+				logger.Infof("kubelet socket %s was recreated, kubelet probably restarted. Restarting %s device plugin to re-register.", kubeletSocketPath, dpi.deviceName)
+				return nil
+			} else if event.Name == socketDir &&
+				(event.Op.Has(fsnotify.Remove) || event.Op.Has(fsnotify.Rename)) {
+				logger.Infof("device plugin socket directory %s was removed or replaced, kubelet probably restarted. Restarting %s device plugin to re-register.", socketDir, dpi.deviceName)
 				return nil
 			}
 		}
