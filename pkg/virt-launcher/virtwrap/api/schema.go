@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 
 	kubev1 "k8s.io/api/core/v1"
@@ -777,6 +779,58 @@ type PCIHole64 struct {
 type ControllerTarget struct {
 	BusNr    *uint32 `xml:"busNr,attr,omitempty"`
 	NUMANode *uint32 `xml:"node,omitempty"`
+}
+
+// parseFlexUint32 parses a string as uint32, accepting both decimal ("32")
+// and hex-prefixed ("0x20") representations. PCI-related fields in libvirt
+// XML may use either format depending on which component produced the XML
+// (e.g. hook sidecars using libvirtxml).
+func parseFlexUint32(s string) (uint32, error) {
+	v, err := strconv.ParseUint(strings.TrimSpace(s), 0, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(v), nil
+}
+
+func (t *ControllerTarget) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "busNr" {
+			v, err := parseFlexUint32(attr.Value)
+			if err != nil {
+				return fmt.Errorf("invalid busNr %q: %w", attr.Value, err)
+			}
+			t.BusNr = &v
+		}
+	}
+	for {
+		tok, err := d.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		switch tok := tok.(type) {
+		case xml.StartElement:
+			if tok.Name.Local == "node" {
+				var s string
+				if err := d.DecodeElement(&s, &tok); err != nil {
+					return err
+				}
+				v, err := parseFlexUint32(s)
+				if err != nil {
+					return fmt.Errorf("invalid NUMA node %q: %w", s, err)
+				}
+				t.NUMANode = &v
+			} else {
+				if err := d.Skip(); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // END ControllerTarget

@@ -1609,14 +1609,17 @@ func appendPCIeRootPortControllers(domainSpec *api.DomainSpec, count int) {
 }
 
 // maxPCIControllerIndex returns the highest index among PCI controllers in the domain spec.
+// Controller indices may be decimal ("32") or hex-prefixed ("0x20") depending
+// on which component last produced the domain XML, so base 0 is used for
+// auto-detection.
 func maxPCIControllerIndex(domainSpec *api.DomainSpec) int {
 	maxIdx := 0
 	for _, c := range domainSpec.Devices.Controllers {
 		if c.Type != "pci" {
 			continue
 		}
-		if idx, err := strconv.Atoi(c.Index); err == nil && idx > maxIdx {
-			maxIdx = idx
+		if idx, err := strconv.ParseInt(c.Index, 0, 64); err == nil && int(idx) > maxIdx {
+			maxIdx = int(idx)
 		}
 	}
 	return maxIdx

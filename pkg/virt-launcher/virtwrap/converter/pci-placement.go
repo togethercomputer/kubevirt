@@ -192,7 +192,7 @@ type expanderBusAssigner struct {
 func getCurrentControllerIndex(domainSpec *api.DomainSpec) uint32 {
 	maxIndex := uint32(0)
 	for _, controller := range domainSpec.Devices.Controllers {
-		if idx, err := strconv.ParseUint(controller.Index, 10, 32); err == nil {
+		if idx, err := strconv.ParseUint(controller.Index, 0, 32); err == nil {
 			if uint32(idx) > maxIndex {
 				maxIndex = uint32(idx)
 			}
