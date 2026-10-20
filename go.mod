@@ -2,6 +2,8 @@ module kubevirt.io/kubevirt
 
 go 1.23.0
 
+toolchain go1.26.10
+
 require (
 	github.com/cheggaaa/pb/v3 v3.1.0
 	github.com/containernetworking/cni v1.1.2
