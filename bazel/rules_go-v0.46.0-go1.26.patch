@@ -1,0 +1,109 @@
+diff --git a/go/private/sdk.bzl b/go/private/sdk.bzl
+--- a/go/private/sdk.bzl
++++ b/go/private/sdk.bzl
+@@ -488,7 +488,10 @@ def _sdk_build_file(ctx, platform, version, experiments):
+     goos, _, goarch = platform.partition("_")
+ 
+     pv = parse_version(version)
+-    if pv != None and pv[1] >= 20:
++
++    # Go 1.25 removed the coverageredesign GOEXPERIMENT; setting
++    # GOEXPERIMENT=nocoverageredesign makes the go command fail.
++    if pv != None and pv[1] >= 20 and pv[1] < 25:
+         # Turn off coverageredesign GOEXPERIMENT on 1.20+
+         # until rules_go is updated to work with the
+         # coverage redesign.
+diff --git a/go/tools/builders/ar.go b/go/tools/builders/ar.go
+--- a/go/tools/builders/ar.go
++++ b/go/tools/builders/ar.go
+@@ -19,6 +19,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"os"
++	"path/filepath"
+ 	"strconv"
+ 	"strings"
+ )
+@@ -114,3 +115,65 @@ func stripArMetadata(archivePath string) error {
+ 		}
+ 	}
+ }
++
++// appendArEntries appends files to an existing archive the way
++// "go tool pack r" does: zero mtime/uid/gid, the file mode in octal, the
++// base name truncated to 16 bytes, and data padded to an even length.
++func appendArEntries(archivePath string, files []string) error {
++	archive, err := os.OpenFile(archivePath, os.O_RDWR, 0)
++	if err != nil {
++		return err
++	}
++	defer archive.Close()
++
++	magic := make([]byte, len(arHeader))
++	if _, err := io.ReadFull(archive, magic); err != nil {
++		return err
++	}
++	if string(magic) != arHeader {
++		return fmt.Errorf("%s is not an archive", archivePath)
++	}
++	if _, err := archive.Seek(0, io.SeekEnd); err != nil {
++		return err
++	}
++
++	for _, file := range files {
++		if err := appendArEntry(archive, file); err != nil {
++			return err
++		}
++	}
++	return archive.Close()
++}
++
++func appendArEntry(archive *os.File, file string) error {
++	f, err := os.Open(file)
++	if err != nil {
++		return err
++	}
++	defer f.Close()
++	info, err := f.Stat()
++	if err != nil {
++		return err
++	}
++	name := filepath.Base(file)
++	if len(name) > 16 {
++		name = name[:16]
++	}
++	size := info.Size()
++	if _, err := fmt.Fprintf(archive, "%-16s%-12d%-6d%-6d%-8o%-10d`\n", name, 0, 0, 0, info.Mode(), size); err != nil {
++		return err
++	}
++	n, err := io.Copy(archive, f)
++	if err != nil {
++		return err
++	}
++	if n != size {
++		return fmt.Errorf("%s: wrote %d bytes, expected %d", file, n, size)
++	}
++	if size%2 != 0 {
++		if _, err := archive.Write([]byte{'\n'}); err != nil {
++			return err
++		}
++	}
++	return nil
++}
+diff --git a/go/tools/builders/compilepkg.go b/go/tools/builders/compilepkg.go
+--- a/go/tools/builders/compilepkg.go
++++ b/go/tools/builders/compilepkg.go
+@@ -599,10 +599,9 @@ func runNogo(ctx context.Context, workDir string, nogoPath string, srcs []string
+ }
+ 
+ func appendToArchive(goenv *env, outPath string, objFiles []string) error {
+-	// Use abs to work around long path issues on Windows.
+-	args := goenv.goTool("pack", "r", abs(outPath))
+-	args = append(args, objFiles...)
+-	return goenv.runCommand(args)
++	// Go 1.25+ SDKs no longer ship a prebuilt "pack" tool, so append the
++	// object files in-process, matching "go tool pack r" output.
++	return appendArEntries(abs(outPath), objFiles)
+ }
+ 
+ func createTrimPath(gcFlags []string, path string) string {

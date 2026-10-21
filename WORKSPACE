@@ -46,6 +46,10 @@ http_archive(
         "https://github.com/bazelbuild/rules_go/releases/download/v0.46.0/rules_go-v0.46.0.zip",
         "https://storage.googleapis.com/builddeps/80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
     ],
+    # SEC-3320: Go 1.25+ removed the coverageredesign GOEXPERIMENT and the
+    # prebuilt "pack" tool, both of which rules_go v0.46.0 relies on.
+    patch_args = ["-p1"],
+    patches = ["//bazel:rules_go-v0.46.0-go1.26.patch"],
 )
 
 # FIXME: added to make update of gazelle possible, see https://github.com/bazelbuild/bazel-gazelle/issues/1290#issuecomment-1312809060
@@ -159,6 +163,20 @@ load(
     "go_rules_dependencies",
 )
 load("@bazeldnf//:deps.bzl", "bazeldnf_dependencies", "rpm")
+load("@bazel_gazelle//:deps.bzl", gazelle_go_repository = "go_repository")
+
+# SEC-3320: rules_go v0.46.0 pins golang.org/x/tools v0.15.0 for nogo, which
+# does not compile with Go 1.26 (internal/tokeninternal layout assertion).
+# Declared before go_rules_dependencies() so it takes precedence.
+gazelle_go_repository(
+    name = "org_golang_x_tools",
+    build_file_generation = "on",
+    build_file_proto_mode = "disable",
+    build_naming_convention = "import_alias",
+    importpath = "golang.org/x/tools",
+    sum = "h1:BgcpHewrV5AUp2G9MebG4XPFI1E2W41zU1SaqVA9vJY=",
+    version = "v0.30.0",
+)
 
 go_rules_dependencies()
 
