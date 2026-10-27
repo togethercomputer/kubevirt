@@ -24,6 +24,10 @@
 The aim is to provide a common ground for virtualization solutions on top of
 Kubernetes.
 
+## Together-specific notes
+This is a fork containing kubevirt main and the stable release 1.4.0.
+Since the images we're running in our substrate clusters are based on 1.4.0, please merge your changes into `release-1.4.0/together` branch and build from that.
+
 ## Introduction
 
 ### Virtualization extension for Kubernetes
