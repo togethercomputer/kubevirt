@@ -353,9 +353,22 @@ func (c *VirtualMachineController) execute(key string) error {
 		}
 	}
 
-	if vmiExists && domainExists && domain.Spec.Metadata.KubeVirt.UID != vmi.UID {
+	// A VMI recreated with the same name has to wait until the previous
+	// incarnation is cleaned up. Once that incarnation's domain is marked for
+	// deletion (or after a virt-handler restart), only its ghost record is
+	// left, and it blocks the new launcher connection.
+	staleUID := vmi.UID
+	if vmiExists && domainExists {
+		staleUID = domain.Spec.Metadata.KubeVirt.UID
+	} else if vmiExists {
+		if ghostUID := virtcache.GhostRecordGlobalStore.LastKnownUID(key); ghostUID != "" {
+			staleUID = ghostUID
+		}
+	}
+
+	if vmiExists && staleUID != vmi.UID {
 		oldVMI := v1.NewVMIReferenceFromNameWithNS(vmi.Namespace, vmi.Name)
-		oldVMI.UID = domain.Spec.Metadata.KubeVirt.UID
+		oldVMI.UID = staleUID
 		expired, initialized, err := c.launcherClients.IsLauncherClientUnresponsive(oldVMI)
 		if err != nil {
 			return err
