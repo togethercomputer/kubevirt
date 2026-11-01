@@ -464,6 +464,88 @@ var _ = Describe("VirtualMachineInstance", func() {
 
 		})
 
+		Context("with a ghost record left by an older incarnation of the VMI", func() {
+			const oldUID = types.UID("old-incarnation-uid")
+			var oldSocket string
+
+			BeforeEach(func() {
+				oldSocket = cmdclient.SocketFilePathOnHost("old-incarnation-pod-uid")
+				Expect(os.MkdirAll(filepath.Dir(oldSocket), 0755)).To(Succeed())
+				f, err := os.Create(oldSocket)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(f.Close()).To(Succeed())
+				Expect(virtcache.GhostRecordGlobalStore.Add(metav1.NamespaceDefault, "testvmi", oldSocket, oldUID)).To(Succeed())
+
+				// No cached launcher clients, as right after a virt-handler restart.
+				controller.launcherClients = launcherclients.NewLauncherClientsManager(GinkgoT().TempDir(), nil)
+			})
+
+			ghostRecordUID := func() types.UID {
+				return virtcache.GhostRecordGlobalStore.LastKnownUID(metav1.NamespaceDefault + "/testvmi")
+			}
+
+			DescribeTable("should clean it up once the old launcher socket is gone", func(stopOldLauncher func(), vmiHost string) {
+				stopOldLauncher()
+				vmi := NewScheduledVMI(vmiTestUUID, podTestUUID, vmiHost)
+				vmi.Labels = map[string]string{v1.NodeNameLabel: vmiHost}
+				createVMI(vmi)
+				mockHotplugVolumeMounter.EXPECT().UnmountAll(gomock.Any(), mockCgroupManager).Return(nil)
+
+				sanityExecuteNoDomain()
+
+				// The new incarnation can now register its own ghost record.
+				Expect(ghostRecordUID()).To(BeEmpty())
+				Expect(virtcache.GhostRecordGlobalStore.Add(metav1.NamespaceDefault, "testvmi", sockFile, vmiTestUUID)).To(Succeed())
+				Expect(mockQueue.GetAddAfterEnqueueCount()).To(Equal(1))
+			},
+				Entry("when the watchdog marked the socket unresponsive and the old domain for deletion", func() {
+					Expect(cmdclient.MarkSocketUnresponsive(oldSocket)).To(Succeed())
+					domain := api.NewMinimalDomainWithUUID("testvmi", oldUID)
+					now := metav1.Now()
+					domain.ObjectMeta.DeletionTimestamp = &now
+					addDomain(domain)
+				}, host),
+				Entry("when the socket was removed with its pod and no domain is cached", func() {
+					Expect(os.RemoveAll(filepath.Dir(oldSocket))).To(Succeed())
+				}, host),
+				Entry("when the new VMI is on another node", func() {
+					Expect(os.RemoveAll(filepath.Dir(oldSocket))).To(Succeed())
+				}, "othernode"),
+			)
+
+			DescribeTable("should keep it while the old launcher socket is still present", func(cacheRunningDomain bool) {
+				if cacheRunningDomain {
+					domain := api.NewMinimalDomainWithUUID("testvmi", oldUID)
+					domain.Status.Status = api.Running
+					addDomain(domain)
+				}
+				createVMI(NewScheduledVMI(vmiTestUUID, podTestUUID, host))
+
+				sanityExecute()
+
+				Expect(ghostRecordUID()).To(Equal(oldUID))
+				Expect(mockQueue.Len()).To(Equal(0))
+				Expect(mockQueue.GetAddAfterEnqueueCount()).To(Equal(0))
+			},
+				Entry("with no domain cached", false),
+				Entry("with the old domain cached as running", true),
+			)
+		})
+
+		It("should not treat the VMI's own ghost record as an older incarnation", func() {
+			Expect(virtcache.GhostRecordGlobalStore.Add(metav1.NamespaceDefault, "testvmi", sockFile, vmiTestUUID)).To(Succeed())
+			vmi := api2.NewMinimalVMI("testvmi")
+			vmi.UID = vmiTestUUID
+			vmi.Status.Phase = v1.Succeeded
+			createVMI(vmi)
+
+			client.EXPECT().DeleteDomain(gomock.Any())
+			mockHotplugVolumeMounter.EXPECT().UnmountAll(gomock.Any(), mockCgroupManager).Return(nil)
+			sanityExecute()
+			testutils.ExpectEvent(recorder, VMISignalDeletion)
+			Expect(mockQueue.GetAddAfterEnqueueCount()).To(Equal(0))
+		})
+
 		It("should silently retry if the command socket is not yet ready", func() {
 			vmi := NewScheduledVMI(vmiTestUUID, "notexisingpoduid", host)
 			// the socket dir must exist, to not go immediately to failed

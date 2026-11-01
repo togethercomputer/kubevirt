@@ -353,12 +353,34 @@ func (c *VirtualMachineController) execute(key string) error {
 		}
 	}
 
-	if vmiExists && domainExists && domain.Spec.Metadata.KubeVirt.UID != vmi.UID {
+	// A VMI recreated with the same name has to wait until the previous
+	// incarnation is cleaned up. Once that incarnation's domain is marked for
+	// deletion, or is missing after a virt-handler restart, only its ghost
+	// record is left, and it blocks the new launcher connection.
+	ghostUID := virtcache.GhostRecordGlobalStore.LastKnownUID(key)
+	oldUID, hasOldIncarnation := ghostUID, false
+	if vmiExists && domainExists {
+		oldUID = domain.Spec.Metadata.KubeVirt.UID
+		hasOldIncarnation = oldUID != vmi.UID
+	} else if vmiExists {
+		hasOldIncarnation = ghostUID != "" && ghostUID != vmi.UID
+	}
+
+	if hasOldIncarnation {
 		oldVMI := v1.NewVMIReferenceFromNameWithNS(vmi.Namespace, vmi.Name)
-		oldVMI.UID = domain.Spec.Metadata.KubeVirt.UID
-		expired, initialized, err := c.launcherClients.IsLauncherClientUnresponsive(oldVMI)
-		if err != nil {
-			return err
+		oldVMI.UID = oldUID
+		var expired, initialized bool
+		if ghostSocket := virtcache.GhostRecordGlobalStore.LastKnownSocket(key); oldUID == ghostUID && ghostSocket != "" {
+			// oldVMI has no ActivePods, so without a cached launcher client
+			// (e.g. after a virt-handler restart) IsLauncherClientUnresponsive
+			// cannot find its socket and reports the launcher as gone. The
+			// ghost record holds the socket path, so check it directly.
+			expired, initialized = cmdclient.IsSocketUnresponsive(ghostSocket), true
+		} else {
+			expired, initialized, err = c.launcherClients.IsLauncherClientUnresponsive(oldVMI)
+			if err != nil {
+				return err
+			}
 		}
 		// If we found an outdated domain which is also not alive anymore, clean up
 		if !initialized {
@@ -373,6 +395,8 @@ func (c *VirtualMachineController) execute(key string) error {
 			// Make sure we re-enqueue the key to ensure this new VMI is processed
 			// after the stale domain is removed
 			c.queue.AddAfter(controller.VirtualMachineInstanceKey(vmi), time.Second*5)
+		} else {
+			c.logger.Object(vmi).Infof("Waiting for the launcher of previous incarnation %s to stop before vmi %s can be processed", oldUID, vmi.UID)
 		}
 
 		return nil
