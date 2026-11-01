@@ -116,6 +116,15 @@ func (store *GhostRecordStore) LastKnownUID(key string) types.UID {
 	return record.UID
 }
 
+// LastKnownSocket returns the launcher socket recorded for key, or "" if there
+// is no record.
+func (store *GhostRecordStore) LastKnownSocket(key string) string {
+	store.Lock()
+	defer store.Unlock()
+
+	return store.cache[key].SocketFile
+}
+
 func (store *GhostRecordStore) list() []ghostRecord {
 	store.Lock()
 	defer store.Unlock()
