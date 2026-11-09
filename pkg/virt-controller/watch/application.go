@@ -718,6 +718,9 @@ func (vca *VirtControllerApp) initCommon() {
 	if err != nil {
 		panic(err)
 	}
+	if err := vca.vmiController.WatchWFFCHostReservationOptOut(vca.namespaceInformer); err != nil {
+		panic(err)
+	}
 
 	recorder := vca.newRecorder(k8sv1.NamespaceAll, "node-controller")
 	vca.nodeController, err = node.NewController(vca.clientSet, vca.nodeInformer, vca.vmiInformer, recorder)

@@ -642,6 +642,86 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
 			})
 
+			Context("when the namespace opts out while the feature is in use", func() {
+				optOut := func(vmi *virtv1.VirtualMachineInstance) {
+					Expect(namespaceStore.Add(&k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
+						Name:   vmi.Namespace,
+						Labels: map[string]string{services.WFFCHostReservationDisabledLabel: "true"},
+					}})).To(Succeed())
+				}
+
+				It("should release the reservation of a VMI whose disk is still copying", func() {
+					vmi := newGPUVMI()
+					optOut(vmi)
+					addDataVolumeInPhase(vmi, cdiv1.ImportInProgress)
+					addVirtualMachine(vmi)
+					addPod(newReservation(vmi))
+
+					sanityExecute()
+
+					testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+					expectPodDoesNotExist(vmi.Namespace, reservationName(vmi))
+				})
+
+				It("should release the reservation and still delete the doppleganger Pod", func() {
+					vmi := newGPUVMI()
+					optOut(vmi)
+					pod := newScheduledTempPod(vmi)
+					addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+					addVirtualMachine(vmi)
+					addPod(pod)
+					addPod(newReservation(vmi))
+					addActivePods(vmi, pod.UID, nodeName)
+					kubeClient.ClearActions()
+
+					sanityExecute()
+
+					testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+					testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+					Expect(podCreatesAndDeletes()).To(Equal([]string{
+						"delete " + reservationName(vmi),
+						"delete " + pod.Name,
+					}))
+				})
+
+				It("should keep the reservation while the launcher is pending if the namespace did not opt out", func() {
+					vmi := newGPUVMI()
+					addDataVolumeInPhase(vmi, cdiv1.ImportInProgress)
+					addVirtualMachine(vmi)
+					addPod(newReservation(vmi))
+
+					sanityExecute()
+
+					expectPodExists(vmi.Namespace, reservationName(vmi))
+				})
+			})
+
+			DescribeTable("should re-sync the VMIs of a namespace when its opt-out label", func(oldLabels, newLabels map[string]string, expectedSyncs int) {
+				for _, vmi := range []*virtv1.VirtualMachineInstance{
+					newGPUVMI(),
+					func() *virtv1.VirtualMachineInstance { v := newGPUVMI(); v.Name, v.UID = "other", "5678"; return v }(),
+					func() *virtv1.VirtualMachineInstance {
+						v := newGPUVMI()
+						v.Namespace, v.UID = "elsewhere", "9012"
+						return v
+					}(),
+				} {
+					Expect(controller.vmiIndexer.Add(vmi)).To(Succeed())
+				}
+				namespace := func(labels map[string]string) *k8sv1.Namespace {
+					return &k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: k8sv1.NamespaceDefault, Labels: labels}}
+				}
+
+				controller.updateNamespace(namespace(oldLabels), namespace(newLabels))
+
+				Expect(mockQueue.Len()).To(Equal(expectedSyncs))
+			},
+				Entry("is set", nil, map[string]string{services.WFFCHostReservationDisabledLabel: "true"}, 2),
+				Entry("is removed", map[string]string{services.WFFCHostReservationDisabledLabel: "true"}, nil, 2),
+				Entry("stays the same", map[string]string{services.WFFCHostReservationDisabledLabel: "true", "a": "b"},
+					map[string]string{services.WFFCHostReservationDisabledLabel: "true", "a": "c"}, 0),
+			)
+
 			It("should release the reservation of a VMI that ended before the reservation reached the cache", func() {
 				vmi := newGPUVMI()
 				vmi.Status.Phase = virtv1.Failed

@@ -19,23 +19,82 @@ package vmi
 
 import (
 	"context"
+	"fmt"
 
 	k8sv1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 
 	virtv1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/client-go/log"
 
 	"kubevirt.io/kubevirt/pkg/controller"
 	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
+	"kubevirt.io/kubevirt/pkg/virt-controller/watch/common"
 )
+
+// syncWFFCHostReservation is the only place sync creates or releases host
+// reservations. While vmi needs one (see
+// services.TemplateService.NeedsWFFCHostReservation, which also checks the
+// namespace opt-out label), it reserves the node of the scheduled temporary
+// pod and keeps the reservation until the launcher is scheduled. In every
+// other case, including a namespace that has opted out, it releases any
+// reservation vmi still has.
+func (c *Controller) syncWFFCHostReservation(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) common.SyncError {
+	needed := vmi.DeletionTimestamp == nil && !vmi.IsFinal() && c.templateService.NeedsWFFCHostReservation(vmi)
+	if needed && controller.PodExists(pod) && isTempPod(pod) {
+		if err := c.ensureWFFCHostReservation(vmi, pod); err != nil {
+			return common.NewSyncError(fmt.Errorf("failed to create host reservation pod: %v", err), controller.FailedCreatePodReason)
+		}
+		return nil
+	}
+	launcherScheduled := controller.PodExists(pod) && !isTempPod(pod) && pod.Spec.NodeName != ""
+	if needed && !launcherScheduled {
+		return nil
+	}
+	if err := c.deleteWFFCHostReservation(vmi); err != nil {
+		return common.NewSyncError(fmt.Errorf("failed to delete host reservation pod: %v", err), controller.FailedDeletePodReason)
+	}
+	return nil
+}
+
+// WatchWFFCHostReservationOptOut re-syncs every VMI in a namespace whose
+// services.WFFCHostReservationDisabledLabel changes. Turning reservations off
+// then releases the namespace's reservations at once, instead of at each
+// VMI's next event.
+func (c *Controller) WatchWFFCHostReservationOptOut(namespaceInformer cache.SharedIndexInformer) error {
+	_, err := namespaceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: c.updateNamespace,
+	})
+	return err
+}
+
+func (c *Controller) updateNamespace(oldObj, newObj interface{}) {
+	oldNamespace, oldOK := oldObj.(*k8sv1.Namespace)
+	newNamespace, newOK := newObj.(*k8sv1.Namespace)
+	if !oldOK || !newOK ||
+		oldNamespace.Labels[services.WFFCHostReservationDisabledLabel] == newNamespace.Labels[services.WFFCHostReservationDisabledLabel] {
+		return
+	}
+	objs, err := c.vmiIndexer.ByIndex(cache.NamespaceIndex, newNamespace.Name)
+	if err != nil {
+		log.Log.Reason(err).Errorf("Failed to list the VMIs of namespace %s", newNamespace.Name)
+		return
+	}
+	for _, obj := range objs {
+		if vmi, ok := obj.(*virtv1.VirtualMachineInstance); ok {
+			c.enqueueVirtualMachine(vmi)
+		}
+	}
+}
 
 // ensureWFFCHostReservation reserves the node of vmi's temporary pod as soon
 // as the pod is scheduled, so the reservation is in place before the
 // temporary pod is deleted. See services.RenderWFFCHostReservationPod.
 func (c *Controller) ensureWFFCHostReservation(vmi *virtv1.VirtualMachineInstance, tempPod *k8sv1.Pod) error {
-	if tempPod.Spec.NodeName == "" || !c.templateService.NeedsWFFCHostReservation(vmi) {
+	if tempPod.Spec.NodeName == "" {
 		return nil
 	}
 	key := controller.NamespacedKey(vmi.Namespace, services.WFFCHostReservationPodName(vmi))

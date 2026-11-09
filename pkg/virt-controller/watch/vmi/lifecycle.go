@@ -66,13 +66,15 @@ func (c *Controller) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod, da
 	key := controller.VirtualMachineInstanceKey(vmi)
 	defer virtControllerVMIWorkQueueTracer.StepTrace(key, "sync", trace.Field{Key: "VMI Name", Value: vmi.Name})
 
+	// This runs before the temporary pod can be deleted below.
+	if syncErr := c.syncWFFCHostReservation(vmi, pod); syncErr != nil {
+		return syncErr, pod
+	}
+
 	if vmi.DeletionTimestamp != nil {
 		err := c.deleteAllMatchingPods(vmi)
 		if err != nil {
 			return common.NewSyncError(fmt.Errorf("failed to delete pod: %v", err), controller.FailedDeletePodReason), pod
-		}
-		if err := c.deleteWFFCHostReservation(vmi); err != nil {
-			return common.NewSyncError(fmt.Errorf("failed to delete host reservation pod: %v", err), controller.FailedDeletePodReason), pod
 		}
 		return nil, pod
 	}
@@ -81,9 +83,6 @@ func (c *Controller) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod, da
 		err := c.deleteAllAttachmentPods(vmi)
 		if err != nil {
 			return common.NewSyncError(fmt.Errorf("failed to delete attachment pods: %v", err), controller.FailedHotplugSyncReason), pod
-		}
-		if err := c.deleteWFFCHostReservation(vmi); err != nil {
-			return common.NewSyncError(fmt.Errorf("failed to delete host reservation pod: %v", err), controller.FailedDeletePodReason), pod
 		}
 		return nil, pod
 	}
@@ -188,18 +187,6 @@ func (c *Controller) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod, da
 		}
 		c.recorder.Eventf(vmi, k8sv1.EventTypeNormal, controller.SuccessfulCreatePodReason, "Created virtual machine pod %s", pod.Name)
 		return nil, pod
-	}
-
-	// Reserve the temporary pod's node before the pod is deleted below, and
-	// release it once the launcher is scheduled.
-	if isTempPod(pod) {
-		if err := c.ensureWFFCHostReservation(vmi, pod); err != nil {
-			return common.NewSyncError(fmt.Errorf("failed to create host reservation pod: %v", err), controller.FailedCreatePodReason), pod
-		}
-	} else if pod.Spec.NodeName != "" {
-		if err := c.deleteWFFCHostReservation(vmi); err != nil {
-			return common.NewSyncError(fmt.Errorf("failed to delete host reservation pod: %v", err), controller.FailedDeletePodReason), pod
-		}
 	}
 
 	if !isWaitForFirstConsumer {
