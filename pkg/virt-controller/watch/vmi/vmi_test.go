@@ -574,6 +574,21 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 				expectPodExists(vmi.Namespace, reservationName(vmi))
 			})
 
+			It("should reserve the node of a doppleganger Pod that is bound but not running yet", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				pod.Status.Phase = k8sv1.PodPending
+				addDataVolumeInPhase(vmi, cdiv1.WaitForFirstConsumer)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulCreatePodReason)
+				expectPodExists(vmi.Namespace, reservationName(vmi))
+			})
+
 			It("should not reserve the node before the doppleganger Pod is scheduled", func() {
 				vmi := newGPUVMI()
 				pod := newScheduledTempPod(vmi)

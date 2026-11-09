@@ -1858,10 +1858,20 @@ var _ = Describe("Template", func() {
 							Domain: v1.DomainSpec{
 								Devices: v1.Devices{
 									DisableHotplug: true,
+									GPUs:           []v1.GPU{{Name: "gpu1", DeviceName: "nvidia.com/GH100_H100_SXM5_80GB"}},
 								},
 							},
 						},
 					}
+				})
+
+				It("should place the temporary pod of a VMI without GPUs or host devices as before", func() {
+					vmi.Spec.Domain.Devices.GPUs = nil
+					pod, err := svc.RenderLaunchManifestNoVm(vmi)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+						Equal([]k8sv1.PodAffinityTerm{userTerm}))
 				})
 
 				It("should keep the temporary pod off nodes reserved for other VMIs", func() {
@@ -1913,6 +1923,7 @@ var _ = Describe("Template", func() {
 						UID:        "1234",
 					}}))
 					Expect(pod.Spec.NodeName).To(Equal("gpu-node-1"))
+					Expect(pod.Spec.HostNetwork).To(BeTrue(), "the pod must not take the VM's address")
 					Expect(pod.Spec.Tolerations).To(Equal(tempPod.Spec.Tolerations))
 					Expect(pod.Spec.PriorityClassName).To(Equal("tenant-vm"))
 					Expect(pod.Spec.ImagePullSecrets).To(Equal(tempPod.Spec.ImagePullSecrets))

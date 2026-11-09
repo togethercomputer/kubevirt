@@ -32,8 +32,15 @@ import (
 // populate the volume, and its requests go with it. Until the launcher is
 // scheduled, the node looks free, so the next VMI's temporary pod can land
 // there and bind its volumes to the same node, although only one of the VMIs
-// fits. A host reservation pod stands in for the temporary pod until then,
-// and temporary pods are kept off nodes that hold another VMI's reservation.
+// fits. For VMIs that need it, a host reservation pod stands in for the
+// temporary pod until then, and their temporary pods are kept off nodes that
+// hold another VMI's reservation.
+//
+// The reservation is created before the temporary pod is deleted, which only
+// helps while the temporary pod still holds the node's resources. A temporary
+// pod with a hook sidecar stays Running until it is deleted. Without one, its
+// only container exits at once, and a completed pod no longer counts for the
+// scheduler.
 const (
 	// WFFCHostReservationLabel marks a host reservation pod. The value is the
 	// UID of the VMI the node is reserved for.
@@ -66,9 +73,11 @@ func WFFCHostReservationPodName(vmi *v1.VirtualMachineInstance) string {
 // claims. It requests nothing: it reserves the node through the
 // anti-affinity of other temporary pods, and it is still there when the
 // launcher is scheduled, so any request could keep the launcher off a node
-// sized to the VM. The VMI owns it but is not its controller, so the VMI
-// controller never takes it for a launcher, and the garbage collector
-// removes it with the VMI.
+// sized to the VM. It uses the host network, so it takes no pod address: a
+// CNI that keeps a VM's address across its pods, keyed on the VMI owner
+// reference, would otherwise give it the VM's address and port. The VMI owns
+// it but is not its controller, so the VMI controller never takes it for a
+// launcher, and the garbage collector removes it with the VMI.
 func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineInstance, tempPod *k8sv1.Pod) *k8sv1.Pod {
 	tempPodSpec := tempPod.Spec.DeepCopy()
 	image := t.launcherImage
@@ -96,6 +105,7 @@ func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineIns
 		},
 		Spec: k8sv1.PodSpec{
 			NodeName:                      tempPodSpec.NodeName,
+			HostNetwork:                   true,
 			Tolerations:                   tempPodSpec.Tolerations,
 			PriorityClassName:             tempPodSpec.PriorityClassName,
 			ImagePullSecrets:              tempPodSpec.ImagePullSecrets,
@@ -124,7 +134,8 @@ func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineIns
 
 // addWFFCHostReservationAntiAffinity keeps a temporary pod off every node
 // that holds another VMI's host reservation, in any namespace. The VMI's own
-// reservation does not repel its temporary pod.
+// reservation does not repel its temporary pod. Only temporary pods of VMIs
+// that need a reservation get the term; the others are placed as before.
 func addWFFCHostReservationAntiAffinity(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) {
 	term := k8sv1.PodAffinityTerm{
 		LabelSelector: &metav1.LabelSelector{
