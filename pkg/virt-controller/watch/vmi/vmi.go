@@ -192,6 +192,7 @@ type templateService interface {
 	RenderLaunchManifestNoVm(*virtv1.VirtualMachineInstance) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentPodTemplate(volumes []*virtv1.Volume, ownerPod *k8sv1.Pod, vmi *virtv1.VirtualMachineInstance, claimMap map[string]*k8sv1.PersistentVolumeClaim) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentTriggerPodTemplate(volume *virtv1.Volume, ownerPod *k8sv1.Pod, vmi *virtv1.VirtualMachineInstance, pvcName string, isBlock, tempPod bool) (*k8sv1.Pod, error)
+	RenderWFFCHostReservationPod(vmi *virtv1.VirtualMachineInstance, tempPod *k8sv1.Pod) *k8sv1.Pod
 	GetLauncherImage() string
 }
 

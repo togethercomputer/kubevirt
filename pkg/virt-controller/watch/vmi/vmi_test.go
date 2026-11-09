@@ -460,6 +460,272 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 			Expect(res).To(HaveLen(1))
 		})
 
+		Context("with a host reservation for WaitForFirstConsumer volumes", func() {
+			const nodeName = "gpu-node-1"
+
+			newGPUVMI := func() *virtv1.VirtualMachineInstance {
+				vmi := newPendingVirtualMachine("testvmi")
+				vmi.Spec.Domain.Devices.GPUs = []virtv1.GPU{{Name: "gpu1", DeviceName: "nvidia.com/GH100_H100_SXM5_80GB"}}
+				vmi.Spec.Volumes = append(vmi.Spec.Volumes, virtv1.Volume{
+					Name:         "test1",
+					VolumeSource: dvVolumeSource,
+				})
+				return vmi
+			}
+
+			newScheduledTempPod := func(vmi *virtv1.VirtualMachineInstance) *k8sv1.Pod {
+				pod := newPodForVirtualMachine(vmi, k8sv1.PodRunning)
+				pod.Annotations[virtv1.EphemeralProvisioningObject] = "true"
+				pod.Spec.NodeName = nodeName
+				pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{Name: "test1"})
+				pod.Spec.Containers = []k8sv1.Container{{Name: "compute", Image: "virt-launcher:on-node"}}
+				pod.Spec.Tolerations = []k8sv1.Toleration{{Key: "gpu", Operator: k8sv1.TolerationOpExists, Effect: k8sv1.TaintEffectNoSchedule}}
+				pod.Spec.PriorityClassName = "tenant-vm"
+				return pod
+			}
+
+			newReservation := func(vmi *virtv1.VirtualMachineInstance) *k8sv1.Pod {
+				reservation := controller.templateService.RenderWFFCHostReservationPod(vmi, newScheduledTempPod(vmi))
+				reservation.UID = "reservation-uid"
+				return reservation
+			}
+
+			addDataVolumeInPhase := func(vmi *virtv1.VirtualMachineInstance, phase cdiv1.DataVolumePhase) {
+				dataVolume := newDv(vmi.Namespace, "test1", phase)
+				dvPVC := newPvcWithOwner(vmi.Namespace, "test1", dataVolume.Name, pointer.P(true))
+				if phase == cdiv1.WaitForFirstConsumer {
+					dvPVC.Status.Phase = k8sv1.ClaimPending
+				}
+				addDataVolumePVC(dvPVC)
+				addDataVolume(dataVolume)
+			}
+
+			podCreatesAndDeletes := func() []string {
+				var actions []string
+				for _, action := range kubeClient.Actions() {
+					if action.GetResource().Resource != "pods" {
+						continue
+					}
+					switch a := action.(type) {
+					case testing.CreateAction:
+						actions = append(actions, "create "+a.GetObject().(*k8sv1.Pod).Name)
+					case testing.DeleteAction:
+						actions = append(actions, "delete "+a.GetName())
+					}
+				}
+				return actions
+			}
+
+			reservationName := func(vmi *virtv1.VirtualMachineInstance) string {
+				return services.WFFCHostReservationPodName(vmi)
+			}
+
+			It("should reserve the node before it deletes the doppleganger Pod", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+				kubeClient.ClearActions()
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulCreatePodReason)
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				Expect(podCreatesAndDeletes()).To(Equal([]string{
+					"create " + reservationName(vmi),
+					"delete " + pod.Name,
+				}))
+				expectPodDoesNotExist(pod.Namespace, pod.Name)
+
+				reservation, err := kubeClient.CoreV1().Pods(vmi.Namespace).Get(context.Background(), reservationName(vmi), metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(reservation.Spec.NodeName).To(Equal(nodeName))
+				Expect(reservation.Labels).To(Equal(map[string]string{
+					virtv1.AppLabel:                   "wffc-host-reservation",
+					services.WFFCHostReservationLabel: string(vmi.UID),
+				}))
+				Expect(metav1.GetControllerOf(reservation)).To(BeNil())
+				Expect(reservation.OwnerReferences).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
+					"Kind": Equal("VirtualMachineInstance"),
+					"UID":  Equal(vmi.UID),
+				})))
+				Expect(reservation.Spec.Volumes).To(BeEmpty())
+				Expect(reservation.Spec.Tolerations).To(Equal(pod.Spec.Tolerations))
+				Expect(reservation.Spec.PriorityClassName).To(Equal(pod.Spec.PriorityClassName))
+				Expect(reservation.Spec.Containers).To(ConsistOf(MatchFields(IgnoreExtras, Fields{
+					"Image": Equal("virt-launcher:on-node"),
+				})))
+			})
+
+			It("should reserve the node as soon as the doppleganger Pod is scheduled", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.WaitForFirstConsumer)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulCreatePodReason)
+				expectPodExists(pod.Namespace, pod.Name)
+				expectPodExists(vmi.Namespace, reservationName(vmi))
+			})
+
+			It("should not reserve the node before the doppleganger Pod is scheduled", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				pod.Spec.NodeName = ""
+				pod.Status.Phase = k8sv1.PodPending
+				addDataVolumeInPhase(vmi, cdiv1.WaitForFirstConsumer)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, "")
+				kubeClient.ClearActions()
+
+				sanityExecute()
+
+				Expect(podCreatesAndDeletes()).To(BeEmpty())
+			})
+
+			It("should not reserve the node for a VMI without GPUs or host devices", func() {
+				vmi := newGPUVMI()
+				vmi.Spec.Domain.Devices.GPUs = nil
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+				kubeClient.ClearActions()
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
+			})
+
+			It("should not create a second reservation", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addPod(newReservation(vmi))
+				addActivePods(vmi, pod.UID, nodeName)
+				kubeClient.ClearActions()
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
+			})
+
+			It("should delete the doppleganger Pod without a reservation when a policy forbids the reservation", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+				kubeClient.PrependReactor("create", "pods", func(action testing.Action) (bool, k8sruntime.Object, error) {
+					return true, nil, k8serrors.NewForbidden(k8sv1.Resource("pods"), reservationName(vmi), fmt.Errorf("denied by policy"))
+				})
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.FailedCreatePodReason)
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				expectPodDoesNotExist(pod.Namespace, pod.Name)
+			})
+
+			It("should keep the doppleganger Pod while the reservation cannot be created", func() {
+				vmi := newGPUVMI()
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+				kubeClient.PrependReactor("create", "pods", func(action testing.Action) (bool, k8sruntime.Object, error) {
+					return true, nil, k8serrors.NewServiceUnavailable("apiserver is restarting")
+				})
+
+				sanityExecute()
+
+				expectPodExists(pod.Namespace, pod.Name)
+				expectVMIWithMatcherConditions(vmi.Namespace, vmi.Name, ContainElement(MatchFields(IgnoreExtras, Fields{
+					"Type":   Equal(virtv1.VirtualMachineInstanceSynchronized),
+					"Status": Equal(k8sv1.ConditionFalse),
+					"Reason": Equal(kvcontroller.FailedCreatePodReason),
+				})))
+			})
+
+			It("should create the launcher Pod while the VMI holds a reservation", func() {
+				vmi := newGPUVMI()
+				addDataVolumeInPhase(vmi, cdiv1.Succeeded)
+				addVirtualMachine(vmi)
+				addPod(newReservation(vmi))
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulCreatePodReason)
+				expectMatchingPodCreation(vmi)
+				expectPodExists(vmi.Namespace, reservationName(vmi))
+			})
+
+			It("should keep the reservation while the launcher Pod is not scheduled", func() {
+				vmi := newGPUVMI()
+				addDataVolumeInPhase(vmi, cdiv1.Succeeded)
+				launcher := newPodForVirtualMachine(vmi, k8sv1.PodPending)
+				addVirtualMachine(vmi)
+				addPod(launcher)
+				addPod(newReservation(vmi))
+				addActivePods(vmi, launcher.UID, "")
+
+				sanityExecute()
+
+				expectPodExists(vmi.Namespace, reservationName(vmi))
+			})
+
+			It("should release the reservation once the launcher Pod is scheduled", func() {
+				vmi := newGPUVMI()
+				addDataVolumeInPhase(vmi, cdiv1.Succeeded)
+				launcher := newPodForVirtualMachine(vmi, k8sv1.PodPending)
+				launcher.Spec.NodeName = nodeName
+				addVirtualMachine(vmi)
+				addPod(launcher)
+				addPod(newReservation(vmi))
+				addActivePods(vmi, launcher.UID, nodeName)
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				expectPodDoesNotExist(vmi.Namespace, reservationName(vmi))
+				expectPodExists(launcher.Namespace, launcher.Name)
+			})
+
+			DescribeTable("should release the reservation of a VMI that is", func(update func(*virtv1.VirtualMachineInstance)) {
+				vmi := newGPUVMI()
+				update(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportInProgress)
+				addVirtualMachine(vmi)
+				addPod(newReservation(vmi))
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				expectPodDoesNotExist(vmi.Namespace, reservationName(vmi))
+			},
+				Entry("failed", func(vmi *virtv1.VirtualMachineInstance) {
+					vmi.Status.Phase = virtv1.Failed
+				}),
+				Entry("being deleted", func(vmi *virtv1.VirtualMachineInstance) {
+					vmi.DeletionTimestamp = pointer.P(metav1.Now())
+				}),
+			)
+		})
+
 		DescribeTable("VMI should handle doppleganger Pod status while DV is in WaitForFirstConsumer phase",
 			func(phase k8sv1.PodPhase, conditions []k8sv1.PodCondition, expectedPhase virtv1.VirtualMachineInstancePhase) {
 				vmi := newPendingVirtualMachine("testvmi")

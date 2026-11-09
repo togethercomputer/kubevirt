@@ -1830,6 +1830,110 @@ var _ = Describe("Template", func() {
 				Expect(pod.Spec.Affinity.PodAntiAffinity).To(BeEquivalentTo(&podAntiAffinity))
 			})
 
+			Context("with a host reservation for WaitForFirstConsumer volumes", func() {
+				var vmi *v1.VirtualMachineInstance
+				userTerm := k8sv1.PodAffinityTerm{
+					LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "db"}},
+					TopologyKey:   "topology.kubernetes.io/zone",
+				}
+				reservationTerm := k8sv1.PodAffinityTerm{
+					LabelSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{Key: WFFCHostReservationLabel, Operator: metav1.LabelSelectorOpExists},
+							{Key: WFFCHostReservationLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"1234"}},
+						},
+					},
+					NamespaceSelector: &metav1.LabelSelector{},
+					TopologyKey:       k8sv1.LabelHostname,
+				}
+
+				BeforeEach(func() {
+					config, kvStore, svc = configFactory(defaultArch)
+					vmi = &v1.VirtualMachineInstance{
+						ObjectMeta: metav1.ObjectMeta{Name: "testvm", Namespace: "default", UID: "1234"},
+						Spec: v1.VirtualMachineInstanceSpec{
+							Affinity: &k8sv1.Affinity{PodAntiAffinity: &k8sv1.PodAntiAffinity{
+								RequiredDuringSchedulingIgnoredDuringExecution: []k8sv1.PodAffinityTerm{userTerm},
+							}},
+							Domain: v1.DomainSpec{
+								Devices: v1.Devices{
+									DisableHotplug: true,
+								},
+							},
+						},
+					}
+				})
+
+				It("should keep the temporary pod off nodes reserved for other VMIs", func() {
+					pod, err := svc.RenderLaunchManifestNoVm(vmi)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+						Equal([]k8sv1.PodAffinityTerm{userTerm, reservationTerm}))
+					Expect(vmi.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+						Equal([]k8sv1.PodAffinityTerm{userTerm}), "the VMI spec must not change")
+				})
+
+				It("should keep the temporary pod of a VMI without affinity off nodes reserved for other VMIs", func() {
+					vmi.Spec.Affinity = nil
+					pod, err := svc.RenderLaunchManifestNoVm(vmi)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+						Equal([]k8sv1.PodAffinityTerm{reservationTerm}))
+				})
+
+				It("should not keep the launcher pod off reserved nodes", func() {
+					pod, err := svc.RenderLaunchManifest(vmi)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+						Equal([]k8sv1.PodAffinityTerm{userTerm}))
+				})
+
+				It("should render a reservation pod on the temporary pod's node", func() {
+					tempPod, err := svc.RenderLaunchManifestNoVm(vmi)
+					Expect(err).ToNot(HaveOccurred())
+					tempPod.Spec.NodeName = "gpu-node-1"
+					tempPod.Spec.Tolerations = []k8sv1.Toleration{{Key: "gpu", Operator: k8sv1.TolerationOpExists}}
+					tempPod.Spec.PriorityClassName = "tenant-vm"
+
+					pod := svc.RenderWFFCHostReservationPod(vmi, tempPod)
+
+					Expect(pod.Name).To(Equal("virt-wffc-reservation-1234"))
+					Expect(pod.Namespace).To(Equal("default"))
+					Expect(pod.Labels).To(Equal(map[string]string{
+						v1.AppLabel:              "wffc-host-reservation",
+						WFFCHostReservationLabel: "1234",
+					}))
+					Expect(pod.OwnerReferences).To(Equal([]metav1.OwnerReference{{
+						APIVersion: "kubevirt.io/v1",
+						Kind:       "VirtualMachineInstance",
+						Name:       "testvm",
+						UID:        "1234",
+					}}))
+					Expect(pod.Spec.NodeName).To(Equal("gpu-node-1"))
+					Expect(pod.Spec.Tolerations).To(Equal(tempPod.Spec.Tolerations))
+					Expect(pod.Spec.PriorityClassName).To(Equal("tenant-vm"))
+					Expect(pod.Spec.ImagePullSecrets).To(Equal(tempPod.Spec.ImagePullSecrets))
+					Expect(pod.Spec.Affinity).To(BeNil())
+					Expect(pod.Spec.Volumes).To(BeEmpty())
+					Expect(pod.Spec.Containers).To(HaveLen(1))
+					Expect(pod.Spec.Containers[0].Image).To(Equal("kubevirt/virt-launcher"))
+					Expect(pod.Spec.Containers[0].Command).To(Equal([]string{"/usr/bin/sleep", "infinity"}))
+					Expect(pod.Spec.Containers[0].Resources).To(BeZero(), "the pod must not keep the launcher off the node")
+				})
+
+				DescribeTable("should reserve the node only for VMIs with passthrough devices", func(devices v1.Devices, expected bool) {
+					vmi.Spec.Domain.Devices = devices
+					Expect(NeedsWFFCHostReservation(vmi)).To(Equal(expected))
+				},
+					Entry("with GPUs", v1.Devices{GPUs: []v1.GPU{{Name: "gpu1", DeviceName: "nvidia.com/GH100_H100_SXM5_80GB"}}}, true),
+					Entry("with host devices", v1.Devices{HostDevices: []v1.HostDevice{{Name: "nvme1", DeviceName: "devices.kubevirt.io/nvme"}}}, true),
+					Entry("without either", v1.Devices{}, false),
+				)
+			})
+
 			It("should add tolerations to pod", func() {
 				config, kvStore, svc = configFactory(defaultArch)
 				podToleration := k8sv1.Toleration{Key: "test"}
