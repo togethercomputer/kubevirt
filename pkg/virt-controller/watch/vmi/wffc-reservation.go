@@ -35,7 +35,7 @@ import (
 // as the pod is scheduled, so the reservation is in place before the
 // temporary pod is deleted. See services.RenderWFFCHostReservationPod.
 func (c *Controller) ensureWFFCHostReservation(vmi *virtv1.VirtualMachineInstance, tempPod *k8sv1.Pod) error {
-	if tempPod.Spec.NodeName == "" || !services.NeedsWFFCHostReservation(vmi) {
+	if tempPod.Spec.NodeName == "" || !c.templateService.NeedsWFFCHostReservation(vmi) {
 		return nil
 	}
 	key := controller.NamespacedKey(vmi.Namespace, services.WFFCHostReservationPodName(vmi))
@@ -61,6 +61,23 @@ func (c *Controller) ensureWFFCHostReservation(vmi *virtv1.VirtualMachineInstanc
 	default:
 		return err
 	}
+}
+
+// enqueueWFFCHostReservationOwner wakes the VMI a host reservation pod
+// belongs to and reports whether pod is a host reservation. The VMI is not the
+// pod's controller, so the usual lookup misses it. Without this, a VMI that
+// ended before its reservation reached the cache would keep the reservation
+// until something else synced it.
+func (c *Controller) enqueueWFFCHostReservationOwner(pod *k8sv1.Pod) bool {
+	if _, isReservation := pod.Labels[services.WFFCHostReservationLabel]; !isReservation {
+		return false
+	}
+	for i := range pod.OwnerReferences {
+		if vmi := c.resolveControllerRef(pod.Namespace, &pod.OwnerReferences[i]); vmi != nil {
+			c.enqueueVirtualMachine(vmi)
+		}
+	}
+	return true
 }
 
 // deleteWFFCHostReservation releases vmi's host reservation, if it has one.

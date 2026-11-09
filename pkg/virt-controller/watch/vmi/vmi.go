@@ -193,6 +193,7 @@ type templateService interface {
 	RenderHotplugAttachmentPodTemplate(volumes []*virtv1.Volume, ownerPod *k8sv1.Pod, vmi *virtv1.VirtualMachineInstance, claimMap map[string]*k8sv1.PersistentVolumeClaim) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentTriggerPodTemplate(volume *virtv1.Volume, ownerPod *k8sv1.Pod, vmi *virtv1.VirtualMachineInstance, pvcName string, isBlock, tempPod bool) (*k8sv1.Pod, error)
 	RenderWFFCHostReservationPod(vmi *virtv1.VirtualMachineInstance, tempPod *k8sv1.Pod) *k8sv1.Pod
+	NeedsWFFCHostReservation(vmi *virtv1.VirtualMachineInstance) bool
 	GetLauncherImage() string
 }
 
@@ -382,6 +383,10 @@ func (c *Controller) addPod(obj interface{}) {
 		// on a restart of the controller manager, it's possible a new pod shows up in a state that
 		// is already pending deletion. Prevent the pod from being a creation observation.
 		c.onPodDelete(pod)
+		return
+	}
+
+	if c.enqueueWFFCHostReservationOwner(pod) {
 		return
 	}
 

@@ -682,7 +682,7 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	setNodeAffinityForPod(vmi, &pod)
 
-	if tempPod && NeedsWFFCHostReservation(vmi) {
+	if tempPod && t.NeedsWFFCHostReservation(vmi) {
 		addWFFCHostReservationAntiAffinity(vmi, &pod)
 	}
 

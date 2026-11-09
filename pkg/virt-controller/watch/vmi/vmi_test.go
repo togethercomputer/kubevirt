@@ -87,6 +87,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 	// We pass the store to backend storage and we don't have direct access
 	var storageClassStore, storageProfileStore cache.Store
 	var kvStore cache.Store
+	var namespaceStore cache.Store
 
 	expectMatchingPodCreation := func(vmi *virtv1.VirtualMachineInstance, matchers ...gomegaTypes.GomegaMatcher) {
 		pods, err := kubeClient.CoreV1().Pods(vmi.Namespace).List(context.Background(), metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=%s", virtv1.CreatedByLabel, string(vmi.UID))})
@@ -223,6 +224,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 		kubeVirtInformer, _ := testutils.NewFakeInformerFor(&virtv1.KubeVirt{})
 		rqInformer, _ := testutils.NewFakeInformerFor(&k8sv1.ResourceQuota{})
 		nsInformer, _ := testutils.NewFakeInformerFor(&k8sv1.Namespace{})
+		namespaceStore = nsInformer.GetStore()
 		var qemuGid int64 = 107
 
 		stubNetStatusUpdate := func(vmi *virtv1.VirtualMachineInstance, _ *k8sv1.Pod) error {
@@ -619,6 +621,49 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
 				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
+			})
+
+			It("should not reserve the node in a namespace that opted out", func() {
+				vmi := newGPUVMI()
+				Expect(namespaceStore.Add(&k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
+					Name:   vmi.Namespace,
+					Labels: map[string]string{services.WFFCHostReservationDisabledLabel: "true"},
+				}})).To(Succeed())
+				pod := newScheduledTempPod(vmi)
+				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
+				addVirtualMachine(vmi)
+				addPod(pod)
+				addActivePods(vmi, pod.UID, nodeName)
+				kubeClient.ClearActions()
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
+			})
+
+			It("should release the reservation of a VMI that ended before the reservation reached the cache", func() {
+				vmi := newGPUVMI()
+				vmi.Status.Phase = virtv1.Failed
+				addDataVolumeInPhase(vmi, cdiv1.WaitForFirstConsumer)
+				addVirtualMachine(vmi)
+				reservation := newReservation(vmi)
+				_, err := kubeClient.CoreV1().Pods(vmi.Namespace).Create(context.Background(), reservation, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				sanityExecute()
+				expectPodExists(vmi.Namespace, reservation.Name)
+				// The informer has delivered the VMI status update from that sync.
+				controller.vmiExpectations.SetExpectations(kvcontroller.VirtualMachineInstanceKey(vmi), 0, 0)
+
+				Expect(controller.podIndexer.Add(reservation)).To(Succeed())
+				controller.addPod(reservation)
+				Expect(mockQueue.Len()).To(Equal(1), "the reservation's arrival must wake its VMI")
+
+				sanityExecute()
+
+				testutils.ExpectEvent(recorder, kvcontroller.SuccessfulDeletePodReason)
+				expectPodDoesNotExist(vmi.Namespace, reservation.Name)
 			})
 
 			It("should not create a second reservation", func() {

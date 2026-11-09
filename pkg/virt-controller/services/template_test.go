@@ -1932,16 +1932,44 @@ var _ = Describe("Template", func() {
 					Expect(pod.Spec.Containers).To(HaveLen(1))
 					Expect(pod.Spec.Containers[0].Image).To(Equal("kubevirt/virt-launcher"))
 					Expect(pod.Spec.Containers[0].Command).To(Equal([]string{"/usr/bin/sleep", "infinity"}))
-					Expect(pod.Spec.Containers[0].Resources).To(BeZero(), "the pod must not keep the launcher off the node")
+					Expect(pod.Spec.Containers[0].Resources).To(Equal(k8sv1.ResourceRequirements{
+						Requests: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse("0"),
+							k8sv1.ResourceMemory: resource.MustParse("0"),
+						},
+					}), "explicit zero requests, so that a LimitRange cannot fill them in")
 				})
 
 				DescribeTable("should reserve the node only for VMIs with passthrough devices", func(devices v1.Devices, expected bool) {
 					vmi.Spec.Domain.Devices = devices
-					Expect(NeedsWFFCHostReservation(vmi)).To(Equal(expected))
+					Expect(svc.NeedsWFFCHostReservation(vmi)).To(Equal(expected))
 				},
 					Entry("with GPUs", v1.Devices{GPUs: []v1.GPU{{Name: "gpu1", DeviceName: "nvidia.com/GH100_H100_SXM5_80GB"}}}, true),
 					Entry("with host devices", v1.Devices{HostDevices: []v1.HostDevice{{Name: "nvme1", DeviceName: "devices.kubevirt.io/nvme"}}}, true),
 					Entry("without either", v1.Devices{}, false),
+				)
+
+				DescribeTable("in a namespace labeled", func(value string, expected bool) {
+					namespace := &k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
+						Name:   "default",
+						Labels: map[string]string{WFFCHostReservationDisabledLabel: value},
+					}}
+					Expect(namespaceStore.Add(namespace)).To(Succeed())
+					DeferCleanup(namespaceStore.Delete, namespace)
+
+					Expect(svc.NeedsWFFCHostReservation(vmi)).To(Equal(expected))
+					pod, err := svc.RenderLaunchManifestNoVm(vmi)
+					Expect(err).ToNot(HaveOccurred())
+					if expected {
+						Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+							Equal([]k8sv1.PodAffinityTerm{userTerm, reservationTerm}))
+					} else {
+						Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
+							Equal([]k8sv1.PodAffinityTerm{userTerm}))
+					}
+				},
+					Entry("to disable host reservations should turn them off", "true", false),
+					Entry("with another value should keep them on", "false", true),
 				)
 			})
 

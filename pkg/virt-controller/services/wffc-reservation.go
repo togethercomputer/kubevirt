@@ -19,6 +19,7 @@ package services
 
 import (
 	k8sv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -46,6 +47,11 @@ const (
 	// UID of the VMI the node is reserved for.
 	WFFCHostReservationLabel = "kubevirt.io/wffc-host-reservation"
 
+	// WFFCHostReservationDisabledLabel set to "true" on a namespace turns host
+	// reservations off for every VMI in it: no reservation pods, and no
+	// anti-affinity on its temporary pods.
+	WFFCHostReservationDisabledLabel = "kubevirt.io/disable-wffc-host-reservation"
+
 	wffcHostReservationApp       = "wffc-host-reservation"
 	wffcHostReservationPodPrefix = "virt-wffc-reservation-"
 )
@@ -53,10 +59,22 @@ const (
 // NeedsWFFCHostReservation reports whether the node that vmi's
 // WaitForFirstConsumer volumes are bound to must stay reserved until the
 // launcher is scheduled. Only VMIs with GPUs or host devices need it: those
-// devices are what the next temporary pod would find free.
-func NeedsWFFCHostReservation(vmi *v1.VirtualMachineInstance) bool {
+// devices are what the next temporary pod would find free. A namespace
+// labeled WFFCHostReservationDisabledLabel=true opts out.
+func (t *TemplateService) NeedsWFFCHostReservation(vmi *v1.VirtualMachineInstance) bool {
 	devices := vmi.Spec.Domain.Devices
-	return len(devices.GPUs) > 0 || len(devices.HostDevices) > 0
+	if len(devices.GPUs) == 0 && len(devices.HostDevices) == 0 {
+		return false
+	}
+	if t.namespaceStore == nil {
+		return true
+	}
+	obj, exists, err := t.namespaceStore.GetByKey(vmi.Namespace)
+	if err != nil || !exists {
+		return true
+	}
+	namespace, ok := obj.(*k8sv1.Namespace)
+	return !ok || namespace.Labels[WFFCHostReservationDisabledLabel] != "true"
 }
 
 // WFFCHostReservationPodName returns the name of vmi's host reservation pod.
@@ -73,7 +91,8 @@ func WFFCHostReservationPodName(vmi *v1.VirtualMachineInstance) string {
 // claims. It requests nothing: it reserves the node through the
 // anti-affinity of other temporary pods, and it is still there when the
 // launcher is scheduled, so any request could keep the launcher off a node
-// sized to the VM. It uses the host network, so it takes no pod address: a
+// sized to the VM. The requests are set to zero rather than left unset,
+// because a LimitRange fills in unset requests. It uses the host network, so it takes no pod address: a
 // CNI that keeps a VM's address across its pods, keyed on the VMI owner
 // reference, would otherwise give it the VM's address and port. The VMI owns
 // it but is not its controller, so the VMI controller never takes it for a
@@ -123,6 +142,12 @@ func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineIns
 				Image:           image,
 				ImagePullPolicy: k8sv1.PullIfNotPresent,
 				Command:         []string{"/usr/bin/sleep", "infinity"},
+				Resources: k8sv1.ResourceRequirements{
+					Requests: k8sv1.ResourceList{
+						k8sv1.ResourceCPU:    resource.MustParse("0"),
+						k8sv1.ResourceMemory: resource.MustParse("0"),
+					},
+				},
 				SecurityContext: &k8sv1.SecurityContext{
 					AllowPrivilegeEscalation: pointer.P(false),
 					Capabilities:             &k8sv1.Capabilities{Drop: []k8sv1.Capability{"ALL"}},
