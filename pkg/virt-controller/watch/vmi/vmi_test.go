@@ -465,6 +465,17 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 		Context("with a host reservation for WaitForFirstConsumer volumes", func() {
 			const nodeName = "gpu-node-1"
 
+			setNamespaceLabels := func(labels map[string]string) {
+				Expect(namespaceStore.Update(&k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
+					Name:   k8sv1.NamespaceDefault,
+					Labels: labels,
+				}})).To(Succeed())
+			}
+
+			BeforeEach(func() {
+				setNamespaceLabels(map[string]string{services.WFFCHostReservationEnabledLabel: "true"})
+			})
+
 			newGPUVMI := func() *virtv1.VirtualMachineInstance {
 				vmi := newPendingVirtualMachine("testvmi")
 				vmi.Spec.Domain.Devices.GPUs = []virtv1.GPU{{Name: "gpu1", DeviceName: "nvidia.com/GH100_H100_SXM5_80GB"}}
@@ -623,12 +634,9 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
 			})
 
-			It("should not reserve the node in a namespace that opted out", func() {
+			It("should not reserve the node in a namespace that did not turn host reservations on", func() {
 				vmi := newGPUVMI()
-				Expect(namespaceStore.Add(&k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
-					Name:   vmi.Namespace,
-					Labels: map[string]string{services.WFFCHostReservationDisabledLabel: "true"},
-				}})).To(Succeed())
+				setNamespaceLabels(nil)
 				pod := newScheduledTempPod(vmi)
 				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
 				addVirtualMachine(vmi)
@@ -642,17 +650,11 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
 			})
 
-			Context("when the namespace opts out while the feature is in use", func() {
-				optOut := func(vmi *virtv1.VirtualMachineInstance) {
-					Expect(namespaceStore.Add(&k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
-						Name:   vmi.Namespace,
-						Labels: map[string]string{services.WFFCHostReservationDisabledLabel: "true"},
-					}})).To(Succeed())
-				}
+			Context("when the namespace turns host reservations off while they are in use", func() {
 
 				It("should release the reservation of a VMI whose disk is still copying", func() {
 					vmi := newGPUVMI()
-					optOut(vmi)
+					setNamespaceLabels(nil)
 					addDataVolumeInPhase(vmi, cdiv1.ImportInProgress)
 					addVirtualMachine(vmi)
 					addPod(newReservation(vmi))
@@ -665,7 +667,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 				It("should release the reservation and still delete the doppleganger Pod", func() {
 					vmi := newGPUVMI()
-					optOut(vmi)
+					setNamespaceLabels(nil)
 					pod := newScheduledTempPod(vmi)
 					addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
 					addVirtualMachine(vmi)
@@ -684,7 +686,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 					}))
 				})
 
-				It("should keep the reservation while the launcher is pending if the namespace did not opt out", func() {
+				It("should keep the reservation while the launcher is pending if the namespace keeps them on", func() {
 					vmi := newGPUVMI()
 					addDataVolumeInPhase(vmi, cdiv1.ImportInProgress)
 					addVirtualMachine(vmi)
@@ -696,7 +698,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 				})
 			})
 
-			DescribeTable("should re-sync the VMIs of a namespace when its opt-out label", func(oldLabels, newLabels map[string]string, expectedSyncs int) {
+			DescribeTable("should re-sync the VMIs of a namespace when its host reservation label", func(oldLabels, newLabels map[string]string, expectedSyncs int) {
 				for _, vmi := range []*virtv1.VirtualMachineInstance{
 					newGPUVMI(),
 					func() *virtv1.VirtualMachineInstance { v := newGPUVMI(); v.Name, v.UID = "other", "5678"; return v }(),
@@ -716,10 +718,10 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 				Expect(mockQueue.Len()).To(Equal(expectedSyncs))
 			},
-				Entry("is set", nil, map[string]string{services.WFFCHostReservationDisabledLabel: "true"}, 2),
-				Entry("is removed", map[string]string{services.WFFCHostReservationDisabledLabel: "true"}, nil, 2),
-				Entry("stays the same", map[string]string{services.WFFCHostReservationDisabledLabel: "true", "a": "b"},
-					map[string]string{services.WFFCHostReservationDisabledLabel: "true", "a": "c"}, 0),
+				Entry("is set", nil, map[string]string{services.WFFCHostReservationEnabledLabel: "true"}, 2),
+				Entry("is removed", map[string]string{services.WFFCHostReservationEnabledLabel: "true"}, nil, 2),
+				Entry("stays the same", map[string]string{services.WFFCHostReservationEnabledLabel: "true", "a": "b"},
+					map[string]string{services.WFFCHostReservationEnabledLabel: "true", "a": "c"}, 0),
 			)
 
 			It("should release the reservation of a VMI that ended before the reservation reached the cache", func() {

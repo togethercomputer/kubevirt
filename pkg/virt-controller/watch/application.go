@@ -718,7 +718,7 @@ func (vca *VirtControllerApp) initCommon() {
 	if err != nil {
 		panic(err)
 	}
-	if err := vca.vmiController.WatchWFFCHostReservationOptOut(vca.namespaceInformer); err != nil {
+	if err := vca.vmiController.WatchWFFCHostReservationOptIn(vca.namespaceInformer); err != nil {
 		panic(err)
 	}
 

@@ -37,11 +37,11 @@ import (
 
 // syncWFFCHostReservation is the only place sync creates or releases host
 // reservations. While vmi needs one (see
-// services.TemplateService.NeedsWFFCHostReservation, which also checks the
-// namespace opt-out label), it reserves the node of the scheduled temporary
-// pod and keeps the reservation until the launcher is scheduled. In every
-// other case, including a namespace that has opted out, it releases any
-// reservation vmi still has.
+// services.TemplateService.NeedsWFFCHostReservation, which also checks that
+// the namespace has turned host reservations on), it reserves the node of the
+// scheduled temporary pod and keeps the reservation until the launcher is
+// scheduled. In every other case, including a namespace that has turned them
+// off, it releases any reservation vmi still has.
 func (c *Controller) syncWFFCHostReservation(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) common.SyncError {
 	needed := vmi.DeletionTimestamp == nil && !vmi.IsFinal() && c.templateService.NeedsWFFCHostReservation(vmi)
 	if needed && controller.PodExists(pod) && isTempPod(pod) {
@@ -60,11 +60,12 @@ func (c *Controller) syncWFFCHostReservation(vmi *virtv1.VirtualMachineInstance,
 	return nil
 }
 
-// WatchWFFCHostReservationOptOut re-syncs every VMI in a namespace whose
-// services.WFFCHostReservationDisabledLabel changes. Turning reservations off
-// then releases the namespace's reservations at once, instead of at each
+// WatchWFFCHostReservationOptIn re-syncs every VMI in a namespace whose
+// services.WFFCHostReservationEnabledLabel changes. Turning reservations off
+// then releases the namespace's reservations at once, and turning them on
+// reserves the nodes of its scheduled temporary pods, instead of at each
 // VMI's next event.
-func (c *Controller) WatchWFFCHostReservationOptOut(namespaceInformer cache.SharedIndexInformer) error {
+func (c *Controller) WatchWFFCHostReservationOptIn(namespaceInformer cache.SharedIndexInformer) error {
 	_, err := namespaceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: c.updateNamespace,
 	})
@@ -75,7 +76,7 @@ func (c *Controller) updateNamespace(oldObj, newObj interface{}) {
 	oldNamespace, oldOK := oldObj.(*k8sv1.Namespace)
 	newNamespace, newOK := newObj.(*k8sv1.Namespace)
 	if !oldOK || !newOK ||
-		oldNamespace.Labels[services.WFFCHostReservationDisabledLabel] == newNamespace.Labels[services.WFFCHostReservationDisabledLabel] {
+		oldNamespace.Labels[services.WFFCHostReservationEnabledLabel] == newNamespace.Labels[services.WFFCHostReservationEnabledLabel] {
 		return
 	}
 	objs, err := c.vmiIndexer.ByIndex(cache.NamespaceIndex, newNamespace.Name)

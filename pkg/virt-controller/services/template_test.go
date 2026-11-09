@@ -1863,6 +1863,12 @@ var _ = Describe("Template", func() {
 							},
 						},
 					}
+					namespace := &k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
+						Name:   "default",
+						Labels: map[string]string{WFFCHostReservationEnabledLabel: "true"},
+					}}
+					Expect(namespaceStore.Add(namespace)).To(Succeed())
+					DeferCleanup(namespaceStore.Delete, namespace)
 				})
 
 				It("should place the temporary pod of a VMI without GPUs or host devices as before", func() {
@@ -1949,13 +1955,13 @@ var _ = Describe("Template", func() {
 					Entry("without either", v1.Devices{}, false),
 				)
 
-				DescribeTable("in a namespace labeled", func(value string, expected bool) {
-					namespace := &k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
-						Name:   "default",
-						Labels: map[string]string{WFFCHostReservationDisabledLabel: value},
-					}}
-					Expect(namespaceStore.Add(namespace)).To(Succeed())
-					DeferCleanup(namespaceStore.Delete, namespace)
+				DescribeTable("in a namespace", func(labels map[string]string, inStore bool, expected bool) {
+					namespace := &k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default", Labels: labels}}
+					if inStore {
+						Expect(namespaceStore.Update(namespace)).To(Succeed())
+					} else {
+						Expect(namespaceStore.Delete(namespace)).To(Succeed())
+					}
 
 					Expect(svc.NeedsWFFCHostReservation(vmi)).To(Equal(expected))
 					pod, err := svc.RenderLaunchManifestNoVm(vmi)
@@ -1968,8 +1974,12 @@ var _ = Describe("Template", func() {
 							Equal([]k8sv1.PodAffinityTerm{userTerm}))
 					}
 				},
-					Entry("to disable host reservations should turn them off", "true", false),
-					Entry("with another value should keep them on", "false", true),
+					Entry("labeled to enable host reservations should turn them on",
+						map[string]string{WFFCHostReservationEnabledLabel: "true"}, true, true),
+					Entry("without the label should leave them off", map[string]string{"a": "b"}, true, false),
+					Entry("with another value should leave them off",
+						map[string]string{WFFCHostReservationEnabledLabel: "false"}, true, false),
+					Entry("that is not in the cache should leave them off", nil, false, false),
 				)
 			})
 
