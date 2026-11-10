@@ -11,6 +11,7 @@ go_library(
         "sidecar.go",
         "template.go",
         "virtiofs.go",
+        "wffc-reservation.go",
     ],
     importpath = "kubevirt.io/kubevirt/pkg/virt-controller/services",
     visibility = ["//visibility:public"],

@@ -66,6 +66,11 @@ func (c *Controller) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod, da
 	key := controller.VirtualMachineInstanceKey(vmi)
 	defer virtControllerVMIWorkQueueTracer.StepTrace(key, "sync", trace.Field{Key: "VMI Name", Value: vmi.Name})
 
+	// This runs before the temporary pod can be deleted below.
+	if syncErr := c.syncWFFCHostReservation(vmi, pod); syncErr != nil {
+		return syncErr, pod
+	}
+
 	if vmi.DeletionTimestamp != nil {
 		err := c.deleteAllMatchingPods(vmi)
 		if err != nil {

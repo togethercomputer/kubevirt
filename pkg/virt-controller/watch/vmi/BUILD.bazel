@@ -8,6 +8,7 @@ go_library(
         "storage.go",
         "vmi.go",
         "volume-hotplug.go",
+        "wffc-reservation.go",
     ],
     importpath = "kubevirt.io/kubevirt/pkg/virt-controller/watch/vmi",
     visibility = ["//visibility:public"],

@@ -682,6 +682,10 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 
 	setNodeAffinityForPod(vmi, &pod)
 
+	if tempPod && t.NeedsWFFCHostReservation(vmi) {
+		addWFFCHostReservationAntiAffinity(vmi, &pod)
+	}
+
 	serviceAccountName := serviceAccount(vmi.Spec.Volumes...)
 	if len(serviceAccountName) > 0 {
 		pod.Spec.ServiceAccountName = serviceAccountName
