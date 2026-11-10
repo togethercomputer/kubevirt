@@ -65,7 +65,16 @@ func (c *Controller) syncWFFCHostReservation(vmi *virtv1.VirtualMachineInstance,
 // then releases the namespace's reservations at once, and turning them on
 // reserves the nodes of its scheduled temporary pods, instead of at each
 // VMI's next event.
+//
+// It also keeps the controller's workers waiting until the namespace cache is
+// synced. Until then every namespace reads as unlabeled, so a sync would
+// release the reservation of a VMI whose disk is being copied, and that
+// reservation cannot be created again once the temporary pod is gone.
 func (c *Controller) WatchWFFCHostReservationOptIn(namespaceInformer cache.SharedIndexInformer) error {
+	hasSynced := c.hasSynced
+	c.hasSynced = func() bool {
+		return hasSynced() && namespaceInformer.HasSynced()
+	}
 	_, err := namespaceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: c.updateNamespace,
 	})

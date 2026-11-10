@@ -724,6 +724,20 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 					map[string]string{services.WFFCHostReservationEnabledLabel: "true", "a": "c"}, 0),
 			)
 
+			It("should not start its workers before the namespace cache is synced", func() {
+				controller.hasSynced = func() bool { return true }
+				namespaceInformer, _ := testutils.NewFakeInformerFor(&k8sv1.Namespace{})
+
+				Expect(controller.WatchWFFCHostReservationOptIn(namespaceInformer)).To(Succeed())
+				Expect(controller.hasSynced()).To(BeFalse(),
+					"before the namespace cache is synced, every namespace reads as unlabeled")
+
+				stop := make(chan struct{})
+				defer close(stop)
+				go namespaceInformer.Run(stop)
+				Eventually(controller.hasSynced).Should(BeTrue())
+			})
+
 			It("should release the reservation of a VMI that ended before the reservation reached the cache", func() {
 				vmi := newGPUVMI()
 				vmi.Status.Phase = virtv1.Failed
