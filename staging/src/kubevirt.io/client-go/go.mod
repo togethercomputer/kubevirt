@@ -2,6 +2,8 @@ module kubevirt.io/client-go
 
 go 1.24.0
 
+toolchain go1.26.10
+
 require (
 	github.com/go-kit/log v0.2.1
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
