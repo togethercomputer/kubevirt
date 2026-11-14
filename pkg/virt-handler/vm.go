@@ -59,6 +59,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/config"
 	containerdisk "kubevirt.io/kubevirt/pkg/container-disk"
 	"kubevirt.io/kubevirt/pkg/controller"
+	ephemeraldisk "kubevirt.io/kubevirt/pkg/ephemeral-disk"
 	diskutils "kubevirt.io/kubevirt/pkg/ephemeral-disk-utils"
 	"kubevirt.io/kubevirt/pkg/executor"
 	cmdv1 "kubevirt.io/kubevirt/pkg/handler-launcher-com/cmd/v1"
@@ -2170,6 +2171,13 @@ func (c *VirtualMachineController) processVmCleanup(vmi *v1.VirtualMachineInstan
 	// Unmount container disks and clean up remaining files
 	if err := c.containerDiskMounter.Unmount(vmi); err != nil {
 		return err
+	}
+
+	// Clean up non-persistent overlay volumes
+	// This is done on a best-effort basis - we log errors but don't fail the entire cleanup
+	if err := ephemeraldisk.NewOverlayDiskHandler().CleanupNonPersistentOverlays(vmi); err != nil {
+		log.Log.Object(vmi).Reason(err).Error("Failed to cleanup non-persistent overlay volumes")
+		// Continue with cleanup even if overlay cleanup fails
 	}
 
 	// UnmountAll does the cleanup on the "best effort" basis: it is

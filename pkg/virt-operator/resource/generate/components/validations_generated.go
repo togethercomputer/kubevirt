@@ -7890,6 +7890,105 @@ var CRDsValidation map[string]string = map[string]string{
                           Must be a DNS_LABEL and unique within the vmi.
                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                         type: string
+                      overlay:
+                        description: |-
+                          Overlay represents a qcow2 overlay volume with explicit backing and target sources.
+                          Provides copy-on-write semantics with more control than ephemeral volumes.
+                        properties:
+                          backingFormat:
+                            description: |-
+                              BackingFormat specifies the format of the backing image (raw or qcow2).
+                              Defaults to raw if not specified.
+                            type: string
+                          backingHostPath:
+                            description: BackingHostPath represents a pre-existing
+                              host file or directory used as the backing source.
+                            properties:
+                              path:
+                                description: |-
+                                  path of the directory on the host.
+                                  If the path is a symlink, it will follow the link to the real path.
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                              type:
+                                description: |-
+                                  type for HostPath Volume
+                                  Defaults to ""
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                            required:
+                            - path
+                            type: object
+                          backingPVC:
+                            description: BackingPVC is a reference to a PersistentVolumeClaim
+                              used as the backing (read-only) source.
+                            properties:
+                              claimName:
+                                description: |-
+                                  claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                  More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                type: string
+                              hotpluggable:
+                                description: Hotpluggable indicates whether the volume
+                                  can be hotplugged and hotunplugged.
+                                type: boolean
+                              readOnly:
+                                description: |-
+                                  readOnly Will force the ReadOnly setting in VolumeMounts.
+                                  Default false.
+                                type: boolean
+                            required:
+                            - claimName
+                            type: object
+                          persistent:
+                            description: |-
+                              Persistent indicates whether the overlay should be kept across VM restarts.
+                              If false, the overlay is deleted when the VM stops.
+                              Defaults to false.
+                            type: boolean
+                          targetHostPath:
+                            description: |-
+                              TargetHostPath specifies where to place the overlay file on the host.
+                              If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).
+                            properties:
+                              path:
+                                description: |-
+                                  path of the directory on the host.
+                                  If the path is a symlink, it will follow the link to the real path.
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                              type:
+                                description: |-
+                                  type for HostPath Volume
+                                  Defaults to ""
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                            required:
+                            - path
+                            type: object
+                          targetPVC:
+                            description: |-
+                              TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.
+                              If specified, the overlay will be persisted to this PVC instead of node-local storage.
+                            properties:
+                              claimName:
+                                description: |-
+                                  claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                  More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                type: string
+                              hotpluggable:
+                                description: Hotpluggable indicates whether the volume
+                                  can be hotplugged and hotunplugged.
+                                type: boolean
+                              readOnly:
+                                description: |-
+                                  readOnly Will force the ReadOnly setting in VolumeMounts.
+                                  Default false.
+                                type: boolean
+                            required:
+                            - claimName
+                            type: object
+                        type: object
                       persistentVolumeClaim:
                         description: |-
                           PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.
@@ -13090,6 +13189,105 @@ var CRDsValidation map[string]string = map[string]string{
                   Must be a DNS_LABEL and unique within the vmi.
                   More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                 type: string
+              overlay:
+                description: |-
+                  Overlay represents a qcow2 overlay volume with explicit backing and target sources.
+                  Provides copy-on-write semantics with more control than ephemeral volumes.
+                properties:
+                  backingFormat:
+                    description: |-
+                      BackingFormat specifies the format of the backing image (raw or qcow2).
+                      Defaults to raw if not specified.
+                    type: string
+                  backingHostPath:
+                    description: BackingHostPath represents a pre-existing host file
+                      or directory used as the backing source.
+                    properties:
+                      path:
+                        description: |-
+                          path of the directory on the host.
+                          If the path is a symlink, it will follow the link to the real path.
+                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                        type: string
+                      type:
+                        description: |-
+                          type for HostPath Volume
+                          Defaults to ""
+                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                        type: string
+                    required:
+                    - path
+                    type: object
+                  backingPVC:
+                    description: BackingPVC is a reference to a PersistentVolumeClaim
+                      used as the backing (read-only) source.
+                    properties:
+                      claimName:
+                        description: |-
+                          claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                          More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                        type: string
+                      hotpluggable:
+                        description: Hotpluggable indicates whether the volume can
+                          be hotplugged and hotunplugged.
+                        type: boolean
+                      readOnly:
+                        description: |-
+                          readOnly Will force the ReadOnly setting in VolumeMounts.
+                          Default false.
+                        type: boolean
+                    required:
+                    - claimName
+                    type: object
+                  persistent:
+                    description: |-
+                      Persistent indicates whether the overlay should be kept across VM restarts.
+                      If false, the overlay is deleted when the VM stops.
+                      Defaults to false.
+                    type: boolean
+                  targetHostPath:
+                    description: |-
+                      TargetHostPath specifies where to place the overlay file on the host.
+                      If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).
+                    properties:
+                      path:
+                        description: |-
+                          path of the directory on the host.
+                          If the path is a symlink, it will follow the link to the real path.
+                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                        type: string
+                      type:
+                        description: |-
+                          type for HostPath Volume
+                          Defaults to ""
+                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                        type: string
+                    required:
+                    - path
+                    type: object
+                  targetPVC:
+                    description: |-
+                      TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.
+                      If specified, the overlay will be persisted to this PVC instead of node-local storage.
+                    properties:
+                      claimName:
+                        description: |-
+                          claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                          More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                        type: string
+                      hotpluggable:
+                        description: Hotpluggable indicates whether the volume can
+                          be hotplugged and hotunplugged.
+                        type: boolean
+                      readOnly:
+                        description: |-
+                          readOnly Will force the ReadOnly setting in VolumeMounts.
+                          Default false.
+                        type: boolean
+                    required:
+                    - claimName
+                    type: object
+                type: object
               persistentVolumeClaim:
                 description: |-
                   PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.
@@ -18724,6 +18922,105 @@ var CRDsValidation map[string]string = map[string]string{
                           Must be a DNS_LABEL and unique within the vmi.
                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                         type: string
+                      overlay:
+                        description: |-
+                          Overlay represents a qcow2 overlay volume with explicit backing and target sources.
+                          Provides copy-on-write semantics with more control than ephemeral volumes.
+                        properties:
+                          backingFormat:
+                            description: |-
+                              BackingFormat specifies the format of the backing image (raw or qcow2).
+                              Defaults to raw if not specified.
+                            type: string
+                          backingHostPath:
+                            description: BackingHostPath represents a pre-existing
+                              host file or directory used as the backing source.
+                            properties:
+                              path:
+                                description: |-
+                                  path of the directory on the host.
+                                  If the path is a symlink, it will follow the link to the real path.
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                              type:
+                                description: |-
+                                  type for HostPath Volume
+                                  Defaults to ""
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                            required:
+                            - path
+                            type: object
+                          backingPVC:
+                            description: BackingPVC is a reference to a PersistentVolumeClaim
+                              used as the backing (read-only) source.
+                            properties:
+                              claimName:
+                                description: |-
+                                  claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                  More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                type: string
+                              hotpluggable:
+                                description: Hotpluggable indicates whether the volume
+                                  can be hotplugged and hotunplugged.
+                                type: boolean
+                              readOnly:
+                                description: |-
+                                  readOnly Will force the ReadOnly setting in VolumeMounts.
+                                  Default false.
+                                type: boolean
+                            required:
+                            - claimName
+                            type: object
+                          persistent:
+                            description: |-
+                              Persistent indicates whether the overlay should be kept across VM restarts.
+                              If false, the overlay is deleted when the VM stops.
+                              Defaults to false.
+                            type: boolean
+                          targetHostPath:
+                            description: |-
+                              TargetHostPath specifies where to place the overlay file on the host.
+                              If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).
+                            properties:
+                              path:
+                                description: |-
+                                  path of the directory on the host.
+                                  If the path is a symlink, it will follow the link to the real path.
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                              type:
+                                description: |-
+                                  type for HostPath Volume
+                                  Defaults to ""
+                                  More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                type: string
+                            required:
+                            - path
+                            type: object
+                          targetPVC:
+                            description: |-
+                              TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.
+                              If specified, the overlay will be persisted to this PVC instead of node-local storage.
+                            properties:
+                              claimName:
+                                description: |-
+                                  claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                  More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                type: string
+                              hotpluggable:
+                                description: Hotpluggable indicates whether the volume
+                                  can be hotplugged and hotunplugged.
+                                type: boolean
+                              readOnly:
+                                description: |-
+                                  readOnly Will force the ReadOnly setting in VolumeMounts.
+                                  Default false.
+                                type: boolean
+                            required:
+                            - claimName
+                            type: object
+                        type: object
                       persistentVolumeClaim:
                         description: |-
                           PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.
@@ -23230,6 +23527,105 @@ var CRDsValidation map[string]string = map[string]string{
                                   Must be a DNS_LABEL and unique within the vmi.
                                   More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                                 type: string
+                              overlay:
+                                description: |-
+                                  Overlay represents a qcow2 overlay volume with explicit backing and target sources.
+                                  Provides copy-on-write semantics with more control than ephemeral volumes.
+                                properties:
+                                  backingFormat:
+                                    description: |-
+                                      BackingFormat specifies the format of the backing image (raw or qcow2).
+                                      Defaults to raw if not specified.
+                                    type: string
+                                  backingHostPath:
+                                    description: BackingHostPath represents a pre-existing
+                                      host file or directory used as the backing source.
+                                    properties:
+                                      path:
+                                        description: |-
+                                          path of the directory on the host.
+                                          If the path is a symlink, it will follow the link to the real path.
+                                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                        type: string
+                                      type:
+                                        description: |-
+                                          type for HostPath Volume
+                                          Defaults to ""
+                                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                        type: string
+                                    required:
+                                    - path
+                                    type: object
+                                  backingPVC:
+                                    description: BackingPVC is a reference to a PersistentVolumeClaim
+                                      used as the backing (read-only) source.
+                                    properties:
+                                      claimName:
+                                        description: |-
+                                          claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                          More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                        type: string
+                                      hotpluggable:
+                                        description: Hotpluggable indicates whether
+                                          the volume can be hotplugged and hotunplugged.
+                                        type: boolean
+                                      readOnly:
+                                        description: |-
+                                          readOnly Will force the ReadOnly setting in VolumeMounts.
+                                          Default false.
+                                        type: boolean
+                                    required:
+                                    - claimName
+                                    type: object
+                                  persistent:
+                                    description: |-
+                                      Persistent indicates whether the overlay should be kept across VM restarts.
+                                      If false, the overlay is deleted when the VM stops.
+                                      Defaults to false.
+                                    type: boolean
+                                  targetHostPath:
+                                    description: |-
+                                      TargetHostPath specifies where to place the overlay file on the host.
+                                      If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).
+                                    properties:
+                                      path:
+                                        description: |-
+                                          path of the directory on the host.
+                                          If the path is a symlink, it will follow the link to the real path.
+                                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                        type: string
+                                      type:
+                                        description: |-
+                                          type for HostPath Volume
+                                          Defaults to ""
+                                          More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                        type: string
+                                    required:
+                                    - path
+                                    type: object
+                                  targetPVC:
+                                    description: |-
+                                      TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.
+                                      If specified, the overlay will be persisted to this PVC instead of node-local storage.
+                                    properties:
+                                      claimName:
+                                        description: |-
+                                          claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                          More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                        type: string
+                                      hotpluggable:
+                                        description: Hotpluggable indicates whether
+                                          the volume can be hotplugged and hotunplugged.
+                                        type: boolean
+                                      readOnly:
+                                        description: |-
+                                          readOnly Will force the ReadOnly setting in VolumeMounts.
+                                          Default false.
+                                        type: boolean
+                                    required:
+                                    - claimName
+                                    type: object
+                                type: object
                               persistentVolumeClaim:
                                 description: |-
                                   PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.
@@ -28429,6 +28825,107 @@ var CRDsValidation map[string]string = map[string]string{
                                       Must be a DNS_LABEL and unique within the vmi.
                                       More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                                     type: string
+                                  overlay:
+                                    description: |-
+                                      Overlay represents a qcow2 overlay volume with explicit backing and target sources.
+                                      Provides copy-on-write semantics with more control than ephemeral volumes.
+                                    properties:
+                                      backingFormat:
+                                        description: |-
+                                          BackingFormat specifies the format of the backing image (raw or qcow2).
+                                          Defaults to raw if not specified.
+                                        type: string
+                                      backingHostPath:
+                                        description: BackingHostPath represents a
+                                          pre-existing host file or directory used
+                                          as the backing source.
+                                        properties:
+                                          path:
+                                            description: |-
+                                              path of the directory on the host.
+                                              If the path is a symlink, it will follow the link to the real path.
+                                              More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                            type: string
+                                          type:
+                                            description: |-
+                                              type for HostPath Volume
+                                              Defaults to ""
+                                              More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                            type: string
+                                        required:
+                                        - path
+                                        type: object
+                                      backingPVC:
+                                        description: BackingPVC is a reference to
+                                          a PersistentVolumeClaim used as the backing
+                                          (read-only) source.
+                                        properties:
+                                          claimName:
+                                            description: |-
+                                              claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                              More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                            type: string
+                                          hotpluggable:
+                                            description: Hotpluggable indicates whether
+                                              the volume can be hotplugged and hotunplugged.
+                                            type: boolean
+                                          readOnly:
+                                            description: |-
+                                              readOnly Will force the ReadOnly setting in VolumeMounts.
+                                              Default false.
+                                            type: boolean
+                                        required:
+                                        - claimName
+                                        type: object
+                                      persistent:
+                                        description: |-
+                                          Persistent indicates whether the overlay should be kept across VM restarts.
+                                          If false, the overlay is deleted when the VM stops.
+                                          Defaults to false.
+                                        type: boolean
+                                      targetHostPath:
+                                        description: |-
+                                          TargetHostPath specifies where to place the overlay file on the host.
+                                          If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).
+                                        properties:
+                                          path:
+                                            description: |-
+                                              path of the directory on the host.
+                                              If the path is a symlink, it will follow the link to the real path.
+                                              More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                            type: string
+                                          type:
+                                            description: |-
+                                              type for HostPath Volume
+                                              Defaults to ""
+                                              More info: https://kubernetes.io/docs/concepts/storage/volumes#hostpath
+                                            type: string
+                                        required:
+                                        - path
+                                        type: object
+                                      targetPVC:
+                                        description: |-
+                                          TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.
+                                          If specified, the overlay will be persisted to this PVC instead of node-local storage.
+                                        properties:
+                                          claimName:
+                                            description: |-
+                                              claimName is the name of a PersistentVolumeClaim in the same namespace as the pod using this volume.
+                                              More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+                                            type: string
+                                          hotpluggable:
+                                            description: Hotpluggable indicates whether
+                                              the volume can be hotplugged and hotunplugged.
+                                            type: boolean
+                                          readOnly:
+                                            description: |-
+                                              readOnly Will force the ReadOnly setting in VolumeMounts.
+                                              Default false.
+                                            type: boolean
+                                        required:
+                                        - claimName
+                                        type: object
+                                    type: object
                                   persistentVolumeClaim:
                                     description: |-
                                       PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.

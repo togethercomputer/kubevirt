@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
-    srcs = ["ephemeral-disk.go"],
+    srcs = [
+        "ephemeral-disk.go",
+        "overlay-disk-handler.go",
+    ],
     importpath = "kubevirt.io/kubevirt/pkg/ephemeral-disk",
     visibility = ["//visibility:public"],
     deps = [
@@ -18,14 +21,17 @@ go_test(
     srcs = [
         "ephemeral-disk_suite_test.go",
         "ephemeral-disk_test.go",
+        "overlay-disk-handler_test.go",
     ],
     embed = [":go_default_library"],
     deps = [
         "//pkg/ephemeral-disk-utils:go_default_library",
         "//pkg/libvmi:go_default_library",
         "//pkg/virt-launcher/virtwrap/api:go_default_library",
+        "//staging/src/kubevirt.io/api/core/v1:go_default_library",
         "//staging/src/kubevirt.io/client-go/testutils:go_default_library",
         "//vendor/github.com/onsi/ginkgo/v2:go_default_library",
         "//vendor/github.com/onsi/gomega:go_default_library",
+        "//vendor/k8s.io/api/core/v1:go_default_library",
     ],
 )

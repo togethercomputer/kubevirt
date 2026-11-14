@@ -460,6 +460,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"kubevirt.io/api/core/v1.NoCloudSSHPublicKeyAccessCredentialPropagation":                     schema_kubevirtio_api_core_v1_NoCloudSSHPublicKeyAccessCredentialPropagation(ref),
 		"kubevirt.io/api/core/v1.NodeMediatedDeviceTypesConfig":                                      schema_kubevirtio_api_core_v1_NodeMediatedDeviceTypesConfig(ref),
 		"kubevirt.io/api/core/v1.NodePlacement":                                                      schema_kubevirtio_api_core_v1_NodePlacement(ref),
+		"kubevirt.io/api/core/v1.OverlayVolumeSource":                                                schema_kubevirtio_api_core_v1_OverlayVolumeSource(ref),
 		"kubevirt.io/api/core/v1.PITTimer":                                                           schema_kubevirtio_api_core_v1_PITTimer(ref),
 		"kubevirt.io/api/core/v1.PauseOptions":                                                       schema_kubevirtio_api_core_v1_PauseOptions(ref),
 		"kubevirt.io/api/core/v1.PciHostDevice":                                                      schema_kubevirtio_api_core_v1_PciHostDevice(ref),
@@ -22662,6 +22663,59 @@ func schema_kubevirtio_api_core_v1_NodePlacement(ref common.ReferenceCallback) c
 	}
 }
 
+func schema_kubevirtio_api_core_v1_OverlayVolumeSource(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "OverlayVolumeSource represents a qcow2 overlay volume with a backing source. The overlay provides copy-on-write semantics on top of the backing source.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"backingPVC": {
+						SchemaProps: spec.SchemaProps{
+							Description: "BackingPVC is a reference to a PersistentVolumeClaim used as the backing (read-only) source.",
+							Ref:         ref("kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource"),
+						},
+					},
+					"backingHostPath": {
+						SchemaProps: spec.SchemaProps{
+							Description: "BackingHostPath represents a pre-existing host file or directory used as the backing source.",
+							Ref:         ref("k8s.io/api/core/v1.HostPathVolumeSource"),
+						},
+					},
+					"targetHostPath": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TargetHostPath specifies where to place the overlay file on the host. If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).",
+							Ref:         ref("k8s.io/api/core/v1.HostPathVolumeSource"),
+						},
+					},
+					"targetPVC": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored. If specified, the overlay will be persisted to this PVC instead of node-local storage.",
+							Ref:         ref("kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource"),
+						},
+					},
+					"backingFormat": {
+						SchemaProps: spec.SchemaProps{
+							Description: "BackingFormat specifies the format of the backing image (raw or qcow2). Defaults to raw if not specified.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"persistent": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Persistent indicates whether the overlay should be kept across VM restarts. If false, the overlay is deleted when the VM stops. Defaults to false.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/api/core/v1.HostPathVolumeSource", "kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource"},
+	}
+}
+
 func schema_kubevirtio_api_core_v1_PITTimer(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -27329,6 +27383,12 @@ func schema_kubevirtio_api_core_v1_Volume(ref common.ReferenceCallback) common.O
 							Ref:         ref("kubevirt.io/api/core/v1.EphemeralVolumeSource"),
 						},
 					},
+					"overlay": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Overlay represents a qcow2 overlay volume with explicit backing and target sources. Provides copy-on-write semantics with more control than ephemeral volumes.",
+							Ref:         ref("kubevirt.io/api/core/v1.OverlayVolumeSource"),
+						},
+					},
 					"emptyDisk": {
 						SchemaProps: spec.SchemaProps{
 							Description: "EmptyDisk represents a temporary disk which shares the vmis lifecycle. More info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html",
@@ -27382,7 +27442,7 @@ func schema_kubevirtio_api_core_v1_Volume(ref common.ReferenceCallback) common.O
 			},
 		},
 		Dependencies: []string{
-			"kubevirt.io/api/core/v1.CloudInitConfigDriveSource", "kubevirt.io/api/core/v1.CloudInitNoCloudSource", "kubevirt.io/api/core/v1.ConfigMapVolumeSource", "kubevirt.io/api/core/v1.ContainerDiskSource", "kubevirt.io/api/core/v1.DataVolumeSource", "kubevirt.io/api/core/v1.DownwardAPIVolumeSource", "kubevirt.io/api/core/v1.DownwardMetricsVolumeSource", "kubevirt.io/api/core/v1.EmptyDiskSource", "kubevirt.io/api/core/v1.EphemeralVolumeSource", "kubevirt.io/api/core/v1.HostDisk", "kubevirt.io/api/core/v1.MemoryDumpVolumeSource", "kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource", "kubevirt.io/api/core/v1.SecretVolumeSource", "kubevirt.io/api/core/v1.ServiceAccountVolumeSource", "kubevirt.io/api/core/v1.SysprepSource"},
+			"kubevirt.io/api/core/v1.CloudInitConfigDriveSource", "kubevirt.io/api/core/v1.CloudInitNoCloudSource", "kubevirt.io/api/core/v1.ConfigMapVolumeSource", "kubevirt.io/api/core/v1.ContainerDiskSource", "kubevirt.io/api/core/v1.DataVolumeSource", "kubevirt.io/api/core/v1.DownwardAPIVolumeSource", "kubevirt.io/api/core/v1.DownwardMetricsVolumeSource", "kubevirt.io/api/core/v1.EmptyDiskSource", "kubevirt.io/api/core/v1.EphemeralVolumeSource", "kubevirt.io/api/core/v1.HostDisk", "kubevirt.io/api/core/v1.MemoryDumpVolumeSource", "kubevirt.io/api/core/v1.OverlayVolumeSource", "kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource", "kubevirt.io/api/core/v1.SecretVolumeSource", "kubevirt.io/api/core/v1.ServiceAccountVolumeSource", "kubevirt.io/api/core/v1.SysprepSource"},
 	}
 }
 
@@ -27504,6 +27564,12 @@ func schema_kubevirtio_api_core_v1_VolumeSource(ref common.ReferenceCallback) co
 							Ref:         ref("kubevirt.io/api/core/v1.EphemeralVolumeSource"),
 						},
 					},
+					"overlay": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Overlay represents a qcow2 overlay volume with explicit backing and target sources. Provides copy-on-write semantics with more control than ephemeral volumes.",
+							Ref:         ref("kubevirt.io/api/core/v1.OverlayVolumeSource"),
+						},
+					},
 					"emptyDisk": {
 						SchemaProps: spec.SchemaProps{
 							Description: "EmptyDisk represents a temporary disk which shares the vmis lifecycle. More info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html",
@@ -27556,7 +27622,7 @@ func schema_kubevirtio_api_core_v1_VolumeSource(ref common.ReferenceCallback) co
 			},
 		},
 		Dependencies: []string{
-			"kubevirt.io/api/core/v1.CloudInitConfigDriveSource", "kubevirt.io/api/core/v1.CloudInitNoCloudSource", "kubevirt.io/api/core/v1.ConfigMapVolumeSource", "kubevirt.io/api/core/v1.ContainerDiskSource", "kubevirt.io/api/core/v1.DataVolumeSource", "kubevirt.io/api/core/v1.DownwardAPIVolumeSource", "kubevirt.io/api/core/v1.DownwardMetricsVolumeSource", "kubevirt.io/api/core/v1.EmptyDiskSource", "kubevirt.io/api/core/v1.EphemeralVolumeSource", "kubevirt.io/api/core/v1.HostDisk", "kubevirt.io/api/core/v1.MemoryDumpVolumeSource", "kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource", "kubevirt.io/api/core/v1.SecretVolumeSource", "kubevirt.io/api/core/v1.ServiceAccountVolumeSource", "kubevirt.io/api/core/v1.SysprepSource"},
+			"kubevirt.io/api/core/v1.CloudInitConfigDriveSource", "kubevirt.io/api/core/v1.CloudInitNoCloudSource", "kubevirt.io/api/core/v1.ConfigMapVolumeSource", "kubevirt.io/api/core/v1.ContainerDiskSource", "kubevirt.io/api/core/v1.DataVolumeSource", "kubevirt.io/api/core/v1.DownwardAPIVolumeSource", "kubevirt.io/api/core/v1.DownwardMetricsVolumeSource", "kubevirt.io/api/core/v1.EmptyDiskSource", "kubevirt.io/api/core/v1.EphemeralVolumeSource", "kubevirt.io/api/core/v1.HostDisk", "kubevirt.io/api/core/v1.MemoryDumpVolumeSource", "kubevirt.io/api/core/v1.OverlayVolumeSource", "kubevirt.io/api/core/v1.PersistentVolumeClaimVolumeSource", "kubevirt.io/api/core/v1.SecretVolumeSource", "kubevirt.io/api/core/v1.ServiceAccountVolumeSource", "kubevirt.io/api/core/v1.SysprepSource"},
 	}
 }
 

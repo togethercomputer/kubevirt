@@ -101,7 +101,11 @@ func (c *ephemeralDiskCreator) CreateBackedImageForVolume(volume v1.Volume, back
 
 	imagePath := c.GetFilePath(volume.Name)
 
+	// Check if overlay already exists (for persistent overlays that are being reused)
 	if _, err := os.Stat(imagePath); err == nil {
+		// Overlay exists - for persistent overlays this is expected on VM restart
+		// For non-persistent overlays, this shouldn't happen (they get cleaned up)
+		// but we'll still reuse it if it exists
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err

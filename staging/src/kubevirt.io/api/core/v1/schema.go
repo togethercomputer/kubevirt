@@ -814,6 +814,10 @@ type VolumeSource struct {
 	// Ephemeral is a special volume source that "wraps" specified source and provides copy-on-write image on top of it.
 	// +optional
 	Ephemeral *EphemeralVolumeSource `json:"ephemeral,omitempty"`
+	// Overlay represents a qcow2 overlay volume with explicit backing and target sources.
+	// Provides copy-on-write semantics with more control than ephemeral volumes.
+	// +optional
+	Overlay *OverlayVolumeSource `json:"overlay,omitempty"`
 	// EmptyDisk represents a temporary disk which shares the vmis lifecycle.
 	// More info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html
 	// +optional
@@ -891,6 +895,34 @@ type EphemeralVolumeSource struct {
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
 	// +optional
 	PersistentVolumeClaim *v1.PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+}
+
+// OverlayVolumeSource represents a qcow2 overlay volume with a backing source.
+// The overlay provides copy-on-write semantics on top of the backing source.
+type OverlayVolumeSource struct {
+	// BackingPVC is a reference to a PersistentVolumeClaim used as the backing (read-only) source.
+	// +optional
+	BackingPVC *PersistentVolumeClaimVolumeSource `json:"backingPVC,omitempty"`
+	// BackingHostPath represents a pre-existing host file or directory used as the backing source.
+	// +optional
+	BackingHostPath *v1.HostPathVolumeSource `json:"backingHostPath,omitempty"`
+	// TargetHostPath specifies where to place the overlay file on the host.
+	// If empty, defaults to node-local storage (/var/run/kubevirt-private/overlay-disks).
+	// +optional
+	TargetHostPath *v1.HostPathVolumeSource `json:"targetHostPath,omitempty"`
+	// TargetPVC specifies a PersistentVolumeClaim where the overlay should be stored.
+	// If specified, the overlay will be persisted to this PVC instead of node-local storage.
+	// +optional
+	TargetPVC *PersistentVolumeClaimVolumeSource `json:"targetPVC,omitempty"`
+	// BackingFormat specifies the format of the backing image (raw or qcow2).
+	// Defaults to raw if not specified.
+	// +optional
+	BackingFormat string `json:"backingFormat,omitempty"`
+	// Persistent indicates whether the overlay should be kept across VM restarts.
+	// If false, the overlay is deleted when the VM stops.
+	// Defaults to false.
+	// +optional
+	Persistent bool `json:"persistent,omitempty"`
 }
 
 // EmptyDisk represents a temporary disk which shares the vmis lifecycle.

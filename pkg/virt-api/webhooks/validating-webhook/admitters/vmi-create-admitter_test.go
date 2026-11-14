@@ -2691,6 +2691,229 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 			Expect(causes).To(HaveLen(1))
 			Expect(causes[0].Message).To(ContainSubstring("fake must have max one memory dump volume set"))
 		})
+		It("should accept overlay volume with backing PVC", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+						BackingFormat: "raw",
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(BeEmpty())
+		})
+
+		It("should accept overlay volume with backing HostPath", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingHostPath: &k8sv1.HostPathVolumeSource{
+							Path: "/var/lib/images/base.img",
+						},
+						BackingFormat: "qcow2",
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(BeEmpty())
+		})
+
+		It("should accept overlay volume with target PVC", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "backing-pvc",
+							},
+						},
+						TargetPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "target-pvc",
+							},
+						},
+						BackingFormat: "raw",
+						Persistent:    true,
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(BeEmpty())
+		})
+
+		It("should reject overlay volume without backing source", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("must have at least one backing source"))
+		})
+
+		It("should reject overlay volume with multiple backing sources", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+						BackingHostPath: &k8sv1.HostPathVolumeSource{
+							Path: "/var/lib/images/base.img",
+						},
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("must have exactly one backing source"))
+		})
+
+		It("should reject overlay volume with multiple target sources", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "backing-pvc",
+							},
+						},
+						TargetPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "target-pvc",
+							},
+						},
+						TargetHostPath: &k8sv1.HostPathVolumeSource{
+							Path: "/var/lib/kubevirt/overlays",
+						},
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("can have at most one target"))
+		})
+
+		It("should reject overlay volume with invalid backing format", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+						BackingFormat: "invalid",
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("invalid backingFormat"))
+		})
+
+		It("should reject overlay volume with empty backing PVC claimName", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "",
+							},
+						},
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("claimName must be set"))
+		})
+
+		It("should reject overlay volume with empty backing HostPath path", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingHostPath: &k8sv1.HostPathVolumeSource{
+							Path: "",
+						},
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("path must be set"))
+		})
+
+		It("should reject overlay volume with persistent=true but no target", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "test-pvc",
+							},
+						},
+						Persistent: true,
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("persistent=true requires targetPVC or targetHostPath"))
+		})
+
+		It("should reject overlay volume with target but persistent=false", func() {
+			vmi := api.NewMinimalVMI("testvmi")
+			vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+				Name: "testOverlay",
+				VolumeSource: v1.VolumeSource{
+					Overlay: &v1.OverlayVolumeSource{
+						BackingPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "backing-pvc",
+							},
+						},
+						TargetPVC: &v1.PersistentVolumeClaimVolumeSource{
+							PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{
+								ClaimName: "target-pvc",
+							},
+						},
+						Persistent: false,
+					},
+				},
+			})
+			causes := validateVolumes(k8sfield.NewPath("fake"), vmi.Spec.Volumes, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Message).To(ContainSubstring("requires persistent=true"))
+		})
 
 	})
 
