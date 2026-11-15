@@ -111,5 +111,15 @@ jobs:
       - name: Verify multi-arch manifest
         if: ${{ env.RELEASE_PUSH == 'true' }}
         run: |
-          # must list both linux/amd64 and linux/arm64
-          docker buildx imagetools inspect "public.ecr.aws/k6t4m3l7/kubevirt/virt-controller:$DOCKER_TAG"
+          # Must list both linux/amd64 and linux/arm64 — assert it: a
+          # single-arch publish would pass a bare inspect, so fail the step
+          # explicitly if either platform is missing from the manifest list.
+          inspect_out="$(docker buildx imagetools inspect "public.ecr.aws/k6t4m3l7/kubevirt/virt-controller:$DOCKER_TAG")"
+          echo "$inspect_out"
+          for platform in linux/amd64 linux/arm64; do
+            if ! grep -q "Platform:.*$platform" <<<"$inspect_out"; then
+              echo "::error::virt-controller:$DOCKER_TAG is missing platform $platform — refusing to pass a single-arch publish" >&2
+              exit 1
+            fi
+          done
+          echo "OK: virt-controller:$DOCKER_TAG manifest lists both linux/amd64 and linux/arm64"
