@@ -53,6 +53,13 @@ env:
   DOCKER_PREFIX: public.ecr.aws/k6t4m3l7/kubevirt
   IMAGE_PREFIX: "" # see header: path lives in DOCKER_PREFIX on purpose
   PUSH_TARGETS: virt-controller
+  # workflow_dispatch inputs are bound to env vars exactly once, right here
+  # (GitHub security-hardening convention): run: blocks reference "$VAR" and
+  # step config references ${{ env.VAR }} — ${{ inputs.* }} never appears in
+  # shell code, so untrusted input cannot template-inject into a run: block.
+  RELEASE_REF: ${{ inputs.release_ref }}
+  DOCKER_TAG: ${{ inputs.docker_tag }}
+  RELEASE_PUSH: ${{ inputs.push }}
 
 jobs:
   release:
@@ -62,7 +69,8 @@ jobs:
       - name: Checkout release ref
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.release_ref }}
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Free disk space
         run: |
@@ -78,7 +86,7 @@ jobs:
 
       - name: Login to public ECR
         run: |
-          aws ecr-public get-login-password --region ${{ env.AWS_ECR_PUBLIC_REGION }} | \
+          aws ecr-public get-login-password --region "$AWS_ECR_PUBLIC_REGION" | \
             docker login --username AWS --password-stdin public.ecr.aws
           # hack/dockerized only bind-mounts ~/.docker/config.json into the builder
           # container when it has no credential helpers; strip them so the bazel
@@ -87,21 +95,21 @@ jobs:
             && mv /tmp/docker-config.json ~/.docker/config.json
 
       - name: Dry-run — build images only (x86_64)
-        if: ${{ !inputs.push }}
+        if: ${{ env.RELEASE_PUSH == 'false' }}
         env:
           BUILD_ARCH: x86_64 # single-arch build keeps the dry-run fast
         run: make bazel-build-images
 
       - name: Build + push multi-arch virt-controller
-        if: ${{ inputs.push }}
+        if: ${{ env.RELEASE_PUSH == 'true' }}
         run: |
-          export DOCKER_TAG="${{ inputs.docker_tag }}"
+          # DOCKER_TAG comes from the workflow env (bound from inputs.docker_tag).
           make bazel-push-images
           # pushes :<tag>-amd64 + :<tag>-arm64 via bazel oci_push per arch, then
           # hack/push-container-manifest.sh assembles + pushes the manifest list :<tag>
 
       - name: Verify multi-arch manifest
-        if: ${{ inputs.push }}
+        if: ${{ env.RELEASE_PUSH == 'true' }}
         run: |
           # must list both linux/amd64 and linux/arm64
-          docker buildx imagetools inspect public.ecr.aws/k6t4m3l7/kubevirt/virt-controller:${{ inputs.docker_tag }}
+          docker buildx imagetools inspect "public.ecr.aws/k6t4m3l7/kubevirt/virt-controller:$DOCKER_TAG"
