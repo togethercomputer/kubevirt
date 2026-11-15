@@ -1,0 +1,107 @@
+# Multi-arch (linux/amd64 + linux/arm64) release build of virt-controller,
+# published to Together's AWS Public ECR registry (k6t4m3l7, account 651706779278).
+#
+# Manual workflow (workflow_dispatch):
+#   - release_ref: the tag/branch/SHA to build, e.g. v1.8.4-0.0.6 cut on
+#     together/release-1.8. Always build from a real tag so the published image
+#     is traceable to a commit (the previous k6t4m3l7 pin, e0689b4442, was not).
+#   - docker_tag:  the image tag to publish (should match release_ref).
+#   - push:        false (default) = dry-run, build-only (x86_64) to validate the
+#                  toolchain; true = build both arches and push per-arch tags
+#                  (:<tag>-amd64, :<tag>-arm64) plus the multi-arch manifest
+#                  list (:<tag>) to public.ecr.aws/k6t4m3l7/kubevirt/virt-controller.
+#
+# Credentials: AWS OIDC via the org-shared github-actions-oidc-role (trusts
+# repo:togethercomputer/*, managed in tcloud-infra terraform/gha.tf; already
+# grants ecr-public push). NOTE: ecr-public auth is only served from us-east-1.
+#
+# Registry env: DOCKER_PREFIX carries the FULL repository path prefix and
+# IMAGE_PREFIX is intentionally empty. hack/push-container-manifest.sh builds
+# the manifest-list ref as ${DOCKER_PREFIX}/${image}:${DOCKER_TAG} and does NOT
+# apply IMAGE_PREFIX, so the path must live in DOCKER_PREFIX for per-arch tags
+# and the manifest list to land in the same repo (same pattern as the
+# tcloud-kubevirt-aie publish pipeline).
+
+name: release-multiarch
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: "Git ref to build (tag/branch/SHA), e.g. v1.8.4-0.0.6 on together/release-1.8"
+        required: true
+        type: string
+      docker_tag:
+        description: "Image tag to publish, e.g. v1.8.4-0.0.6"
+        required: true
+        type: string
+      push:
+        description: "Push images to public ECR (false = dry-run build-only)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_GHA_ROLE: arn:aws:iam::651706779278:role/github-actions-oidc-role
+  AWS_ECR_PUBLIC_REGION: us-east-1 # ecr-public GetAuthorizationToken is us-east-1 only
+  KUBEVIRT_CRI: docker # force docker: bazel pusher + docker manifest share one auth path
+  BUILD_ARCH: x86_64,aarch64
+  DOCKER_PREFIX: public.ecr.aws/k6t4m3l7/kubevirt
+  IMAGE_PREFIX: "" # see header: path lives in DOCKER_PREFIX on purpose
+  PUSH_TARGETS: virt-controller
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240 # cold bazel build of both arches is 45-90+ min
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /opt/az || true
+          docker system prune -af || true
+          df -h /
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.AWS_GHA_ROLE }}
+          aws-region: ${{ env.AWS_ECR_PUBLIC_REGION }}
+
+      - name: Login to public ECR
+        run: |
+          aws ecr-public get-login-password --region ${{ env.AWS_ECR_PUBLIC_REGION }} | \
+            docker login --username AWS --password-stdin public.ecr.aws
+          # hack/dockerized only bind-mounts ~/.docker/config.json into the builder
+          # container when it has no credential helpers; strip them so the bazel
+          # pusher (oci_push/container_push) and docker manifest see the ECR auth.
+          jq 'del(.credHelpers, .credsStore)' ~/.docker/config.json > /tmp/docker-config.json \
+            && mv /tmp/docker-config.json ~/.docker/config.json
+
+      - name: Dry-run — build images only (x86_64)
+        if: ${{ !inputs.push }}
+        env:
+          BUILD_ARCH: x86_64 # single-arch build keeps the dry-run fast
+        run: make bazel-build-images
+
+      - name: Build + push multi-arch virt-controller
+        if: ${{ inputs.push }}
+        run: |
+          export DOCKER_TAG="${{ inputs.docker_tag }}"
+          make bazel-push-images
+          # pushes :<tag>-amd64 + :<tag>-arm64 via bazel oci_push per arch, then
+          # hack/push-container-manifest.sh assembles + pushes the manifest list :<tag>
+
+      - name: Verify multi-arch manifest
+        if: ${{ inputs.push }}
+        run: |
+          # must list both linux/amd64 and linux/arm64
+          docker buildx imagetools inspect public.ecr.aws/k6t4m3l7/kubevirt/virt-controller:${{ inputs.docker_tag }}
