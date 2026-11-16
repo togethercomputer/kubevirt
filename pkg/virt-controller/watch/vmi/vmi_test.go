@@ -473,7 +473,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 			}
 
 			BeforeEach(func() {
-				setNamespaceLabels(map[string]string{services.WFFCHostReservationEnabledLabel: "true"})
+				setNamespaceLabels(nil)
 			})
 
 			newGPUVMI := func() *virtv1.VirtualMachineInstance {
@@ -634,9 +634,9 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 				Expect(podCreatesAndDeletes()).To(Equal([]string{"delete " + pod.Name}))
 			})
 
-			It("should not reserve the node in a namespace that did not turn host reservations on", func() {
+			It("should not reserve the node in a namespace that turned host reservations off", func() {
 				vmi := newGPUVMI()
-				setNamespaceLabels(nil)
+				setNamespaceLabels(map[string]string{services.WFFCHostReservationEnabledLabel: "false"})
 				pod := newScheduledTempPod(vmi)
 				addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
 				addVirtualMachine(vmi)
@@ -654,7 +654,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 				It("should release the reservation of a VMI whose disk is still copying", func() {
 					vmi := newGPUVMI()
-					setNamespaceLabels(nil)
+					setNamespaceLabels(map[string]string{services.WFFCHostReservationEnabledLabel: "false"})
 					addDataVolumeInPhase(vmi, cdiv1.ImportInProgress)
 					addVirtualMachine(vmi)
 					addPod(newReservation(vmi))
@@ -667,7 +667,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 				It("should release the reservation and still delete the doppleganger Pod", func() {
 					vmi := newGPUVMI()
-					setNamespaceLabels(nil)
+					setNamespaceLabels(map[string]string{services.WFFCHostReservationEnabledLabel: "false"})
 					pod := newScheduledTempPod(vmi)
 					addDataVolumeInPhase(vmi, cdiv1.ImportScheduled)
 					addVirtualMachine(vmi)
@@ -718,17 +718,17 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 
 				Expect(mockQueue.Len()).To(Equal(expectedSyncs))
 			},
-				Entry("is set", nil, map[string]string{services.WFFCHostReservationEnabledLabel: "true"}, 2),
-				Entry("is removed", map[string]string{services.WFFCHostReservationEnabledLabel: "true"}, nil, 2),
-				Entry("stays the same", map[string]string{services.WFFCHostReservationEnabledLabel: "true", "a": "b"},
-					map[string]string{services.WFFCHostReservationEnabledLabel: "true", "a": "c"}, 0),
+				Entry("is set", nil, map[string]string{services.WFFCHostReservationEnabledLabel: "false"}, 2),
+				Entry("is removed", map[string]string{services.WFFCHostReservationEnabledLabel: "false"}, nil, 2),
+				Entry("stays the same", map[string]string{services.WFFCHostReservationEnabledLabel: "false", "a": "b"},
+					map[string]string{services.WFFCHostReservationEnabledLabel: "false", "a": "c"}, 0),
 			)
 
 			It("should not start its workers before the namespace cache is synced", func() {
 				controller.hasSynced = func() bool { return true }
 				namespaceInformer, _ := testutils.NewFakeInformerFor(&k8sv1.Namespace{})
 
-				Expect(controller.WatchWFFCHostReservationOptIn(namespaceInformer)).To(Succeed())
+				Expect(controller.WatchWFFCHostReservationOptOut(namespaceInformer)).To(Succeed())
 				Expect(controller.hasSynced()).To(BeFalse(),
 					"before the namespace cache is synced, every namespace reads as unlabeled")
 

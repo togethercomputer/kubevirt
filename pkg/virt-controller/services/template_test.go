@@ -1974,12 +1974,12 @@ var _ = Describe("Template", func() {
 							Equal([]k8sv1.PodAffinityTerm{userTerm}))
 					}
 				},
-					Entry("labeled to enable host reservations should turn them on",
-						map[string]string{WFFCHostReservationEnabledLabel: "true"}, true, true),
-					Entry("without the label should leave them off", map[string]string{"a": "b"}, true, false),
-					Entry("with another value should leave them off",
+					Entry("without the label should turn them on", map[string]string{"a": "b"}, true, true),
+					Entry("labeled false should turn them off",
 						map[string]string{WFFCHostReservationEnabledLabel: "false"}, true, false),
-					Entry("that is not in the cache should leave them off", nil, false, false),
+					Entry("with another value should leave them on",
+						map[string]string{WFFCHostReservationEnabledLabel: "true"}, true, true),
+					Entry("that is not in the cache should leave them on", nil, false, true),
 				)
 			})
 

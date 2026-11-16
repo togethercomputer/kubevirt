@@ -37,8 +37,8 @@ import (
 // temporary pod until then, and their temporary pods are kept off nodes that
 // hold another VMI's reservation.
 //
-// All of this is off by default. A namespace turns it on for its VMIs with
-// WFFCHostReservationEnabledLabel=true. Reservations only repel the
+// All of this is on by default. A namespace turns it off for its VMIs with
+// WFFCHostReservationEnabledLabel=false. Reservations only repel the
 // temporary pods of VMIs in namespaces that have it on.
 //
 // The reservation is created before the temporary pod is deleted, which only
@@ -51,9 +51,10 @@ const (
 	// UID of the VMI the node is reserved for.
 	WFFCHostReservationLabel = "kubevirt.io/wffc-host-reservation"
 
-	// WFFCHostReservationEnabledLabel set to "true" on a namespace turns host
-	// reservations on for every VMI in it: reservation pods, and anti-affinity
-	// on its temporary pods. Without it, neither happens.
+	// WFFCHostReservationEnabledLabel set to "false" on a namespace turns host
+	// reservations off for every VMI in it: no reservation pods, and no
+	// anti-affinity on its temporary pods. Any other value, or no label, leaves
+	// them on.
 	WFFCHostReservationEnabledLabel = "kubevirt.io/enable-wffc-host-reservation"
 
 	wffcHostReservationApp       = "wffc-host-reservation"
@@ -63,8 +64,8 @@ const (
 // NeedsWFFCHostReservation reports whether the node that vmi's
 // WaitForFirstConsumer volumes are bound to must stay reserved until the
 // launcher is scheduled. Only VMIs with GPUs or host devices need it: those
-// devices are what the next temporary pod would find free. It is off unless
-// vmi's namespace is labeled WFFCHostReservationEnabledLabel=true.
+// devices are what the next temporary pod would find free. It is on unless
+// vmi's namespace is labeled WFFCHostReservationEnabledLabel=false.
 func (t *TemplateService) NeedsWFFCHostReservation(vmi *v1.VirtualMachineInstance) bool {
 	devices := vmi.Spec.Domain.Devices
 	if len(devices.GPUs) == 0 && len(devices.HostDevices) == 0 {
@@ -75,10 +76,10 @@ func (t *TemplateService) NeedsWFFCHostReservation(vmi *v1.VirtualMachineInstanc
 	}
 	obj, exists, err := t.namespaceStore.GetByKey(vmi.Namespace)
 	if err != nil || !exists {
-		return false
+		return true
 	}
 	namespace, ok := obj.(*k8sv1.Namespace)
-	return ok && namespace.Labels[WFFCHostReservationEnabledLabel] == "true"
+	return !ok || namespace.Labels[WFFCHostReservationEnabledLabel] != "false"
 }
 
 // WFFCHostReservationPodName returns the name of vmi's host reservation pod.
