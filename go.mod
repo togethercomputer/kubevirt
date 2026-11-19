@@ -2,6 +2,8 @@ module kubevirt.io/kubevirt
 
 go 1.24.0
 
+toolchain go1.26.10
+
 require (
 	dario.cat/mergo v1.0.2
 	github.com/cheggaaa/pb/v3 v3.1.0
