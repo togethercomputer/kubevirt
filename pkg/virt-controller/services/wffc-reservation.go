@@ -137,6 +137,18 @@ func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineIns
 			TerminationGracePeriodSeconds: pointer.P(int64(0)),
 			AutomountServiceAccountToken:  pointer.P(false),
 			EnableServiceLinks:            pointer.P(false),
+			// Virtink VM pods skip the temporary pod step, so only the reservation itself can keep them off the node.
+			Affinity: &k8sv1.Affinity{PodAntiAffinity: &k8sv1.PodAntiAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: []k8sv1.PodAffinityTerm{{
+					LabelSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{Key: "virtink.io/vm.name", Operator: metav1.LabelSelectorOpExists},
+						},
+					},
+					NamespaceSelector: &metav1.LabelSelector{},
+					TopologyKey:       k8sv1.LabelHostname,
+				}},
+			}},
 			SecurityContext: &k8sv1.PodSecurityContext{
 				RunAsNonRoot:   pointer.P(true),
 				RunAsUser:      pointer.P(int64(util.NonRootUID)),
