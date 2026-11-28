@@ -40,6 +40,7 @@ import (
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -1933,7 +1934,21 @@ var _ = Describe("Template", func() {
 					Expect(pod.Spec.Tolerations).To(Equal(tempPod.Spec.Tolerations))
 					Expect(pod.Spec.PriorityClassName).To(Equal("tenant-vm"))
 					Expect(pod.Spec.ImagePullSecrets).To(Equal(tempPod.Spec.ImagePullSecrets))
-					Expect(pod.Spec.Affinity).To(BeNil())
+					Expect(pod.Spec.Affinity).To(Equal(&k8sv1.Affinity{PodAntiAffinity: &k8sv1.PodAntiAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: []k8sv1.PodAffinityTerm{{
+							LabelSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{Key: "virtink.io/vm.name", Operator: metav1.LabelSelectorOpExists},
+								},
+							},
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{Key: WFFCHostReservationEnabledLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"false"}},
+								},
+							},
+							TopologyKey: k8sv1.LabelHostname,
+						}},
+					}}), "Virtink VM pods must stay off the node unless their namespace turned host reservations off")
 					Expect(pod.Spec.Volumes).To(BeEmpty())
 					Expect(pod.Spec.Containers).To(HaveLen(1))
 					Expect(pod.Spec.Containers[0].Image).To(Equal("kubevirt/virt-launcher"))
@@ -1973,6 +1988,13 @@ var _ = Describe("Template", func() {
 						Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
 							Equal([]k8sv1.PodAffinityTerm{userTerm}))
 					}
+
+					reservation := svc.RenderWFFCHostReservationPod(vmi, pod)
+					term := reservation.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0]
+					namespaces, err := metav1.LabelSelectorAsSelector(term.NamespaceSelector)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(namespaces.Matches(k8slabels.Set(labels))).To(Equal(expected),
+						"reservations must keep the namespace's Virtink VM pods off their nodes only while it has them on")
 				},
 					Entry("without the label should turn them on", map[string]string{"a": "b"}, true, true),
 					Entry("labeled false should turn them off",
