@@ -39,7 +39,7 @@ import (
 //
 // All of this is on by default. A namespace turns it off for its VMIs with
 // WFFCHostReservationEnabledLabel=false. Reservations only repel the
-// temporary pods of VMIs in namespaces that have it on.
+// temporary pods of VMIs, and Virtink VM pods, in namespaces that have it on.
 //
 // The reservation is created before the temporary pod is deleted, which only
 // helps while the temporary pod still holds the node's resources. A temporary
@@ -94,7 +94,8 @@ func WFFCHostReservationPodName(vmi *v1.VirtualMachineInstance) string {
 // The pod is bound to the node directly, so it never queues behind other
 // pods. It mounts no volumes, so CDI does not count it as a user of the
 // claims. It requests nothing: it reserves the node through the
-// anti-affinity of other temporary pods, and it is still there when the
+// anti-affinity of other temporary pods and through its own anti-affinity to
+// Virtink VM pods, and it is still there when the
 // launcher is scheduled, so any request could keep the launcher off a node
 // sized to the VM. The requests are set to zero rather than left unset,
 // because a LimitRange fills in unset requests. It uses the host network, so it takes no pod address: a
@@ -145,8 +146,12 @@ func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineIns
 							{Key: "virtink.io/vm.name", Operator: metav1.LabelSelectorOpExists},
 						},
 					},
-					NamespaceSelector: &metav1.LabelSelector{},
-					TopologyKey:       k8sv1.LabelHostname,
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{Key: WFFCHostReservationEnabledLabel, Operator: metav1.LabelSelectorOpNotIn, Values: []string{"false"}},
+						},
+					},
+					TopologyKey: k8sv1.LabelHostname,
 				}},
 			}},
 			SecurityContext: &k8sv1.PodSecurityContext{
