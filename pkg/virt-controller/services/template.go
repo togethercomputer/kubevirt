@@ -140,6 +140,7 @@ type TemplateService struct {
 	launcherSubGid             int64
 	resourceQuotaStore         cache.Store
 	namespaceStore             cache.Store
+	storageClassStore          cache.Store
 
 	sidecarCreators               []SidecarCreatorFunc
 	netMemoryCalculator           netMemoryCalculator
@@ -700,6 +701,11 @@ func (t *TemplateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 	}
 
 	pod.Spec.Volumes = append(pod.Spec.Volumes, sidecarVolumes...)
+
+	// A VMI whose claims all bind immediately has no temporary pod and no reservation, so its launcher gets the temporary pod's term.
+	if !tempPod && t.NeedsWFFCHostReservation(vmi) && t.claimsBindImmediately(vmi.Namespace, pod.Spec.Volumes) {
+		addWFFCHostReservationAntiAffinity(vmi, &pod)
+	}
 
 	return &pod, nil
 }

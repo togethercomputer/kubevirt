@@ -19,8 +19,10 @@ package services
 
 import (
 	k8sv1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 
 	v1 "kubevirt.io/api/core/v1"
 
@@ -35,7 +37,8 @@ import (
 // there and bind its volumes to the same node, although only one of the VMIs
 // fits. For VMIs that need it, a host reservation pod stands in for the
 // temporary pod until then, and their temporary pods are kept off nodes that
-// hold another VMI's reservation.
+// hold another VMI's reservation. So are the launchers of those VMIs whose
+// claims all bind immediately, because such VMIs never have a temporary pod.
 //
 // All of this is on by default. A namespace turns it off for its VMIs with
 // WFFCHostReservationEnabledLabel=false. Reservations only repel the
@@ -165,7 +168,8 @@ func (t *TemplateService) RenderWFFCHostReservationPod(vmi *v1.VirtualMachineIns
 // addWFFCHostReservationAntiAffinity keeps a temporary pod off every node
 // that holds another VMI's host reservation, in any namespace. The VMI's own
 // reservation does not repel its temporary pod. Only temporary pods of VMIs
-// that need a reservation get the term; the others are placed as before.
+// that need a reservation get the term, and the launchers of those among them
+// whose claims all bind immediately; the others are placed as before.
 func addWFFCHostReservationAntiAffinity(vmi *v1.VirtualMachineInstance, pod *k8sv1.Pod) {
 	term := k8sv1.PodAffinityTerm{
 		LabelSelector: &metav1.LabelSelector{
@@ -186,4 +190,46 @@ func addWFFCHostReservationAntiAffinity(vmi *v1.VirtualMachineInstance, pod *k8s
 	antiAffinity := pod.Spec.Affinity.PodAntiAffinity
 	antiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
 		antiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, term)
+}
+
+// WithStorageClassStore lets the TemplateService tell whether a launcher's
+// claims all bind immediately. Without it, only launchers without claims get
+// the reservation term.
+func WithStorageClassStore(store cache.Store) templateServiceOption {
+	return func(service *TemplateService) {
+		service.storageClassStore = store
+	}
+}
+
+// claimsBindImmediately reports whether every claim in volumes is in a
+// StorageClass that binds immediately. Only claims that wait for a first
+// consumer give a VMI a temporary pod and a reservation, and they can tie its
+// launcher to the node it reserved. A claim or StorageClass that is not in
+// the cache counts as waiting.
+func (t *TemplateService) claimsBindImmediately(namespace string, volumes []k8sv1.Volume) bool {
+	for _, volume := range volumes {
+		if volume.PersistentVolumeClaim == nil {
+			continue
+		}
+		if t.storageClassStore == nil {
+			return false
+		}
+		obj, exists, err := t.persistentVolumeClaimStore.GetByKey(namespace + "/" + volume.PersistentVolumeClaim.ClaimName)
+		if err != nil || !exists {
+			return false
+		}
+		pvc, ok := obj.(*k8sv1.PersistentVolumeClaim)
+		if !ok || pvc.Spec.StorageClassName == nil {
+			return false
+		}
+		obj, exists, err = t.storageClassStore.GetByKey(*pvc.Spec.StorageClassName)
+		if err != nil || !exists {
+			return false
+		}
+		storageClass, ok := obj.(*storagev1.StorageClass)
+		if !ok || storageClass.VolumeBindingMode == nil || *storageClass.VolumeBindingMode != storagev1.VolumeBindingImmediate {
+			return false
+		}
+	}
+	return true
 }

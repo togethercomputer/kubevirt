@@ -38,6 +38,7 @@ import (
 	"github.com/onsi/gomega/gstruct"
 	"go.uber.org/mock/gomock"
 	k8sv1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -88,6 +89,7 @@ var _ = Describe("Template", func() {
 	var nonRootUser int64
 	resourceQuotaStore := cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc)
 	namespaceStore := cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc)
+	storageClassStore := cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc)
 
 	kv := &v1.KubeVirt{
 		ObjectMeta: metav1.ObjectMeta{
@@ -146,6 +148,7 @@ var _ = Describe("Template", func() {
 						return hooks.UnmarshalHookSidecarList(vmi)
 					}),
 				WithNetMemoryCalculator(&stubNetMemoryCalculator{}),
+				WithStorageClassStore(storageClassStore),
 			)
 			// Set up mock clients
 			networkClient := fakenetworkclient.NewSimpleClientset()
@@ -1899,12 +1902,66 @@ var _ = Describe("Template", func() {
 						Equal([]k8sv1.PodAffinityTerm{reservationTerm}))
 				})
 
-				It("should not keep the launcher pod off reserved nodes", func() {
+				DescribeTable("should keep the launcher off nodes reserved for other VMIs only if all its claims bind immediately",
+					func(storageClassNames []*string, expected bool) {
+						for name, bindingMode := range map[string]storagev1.VolumeBindingMode{
+							"network": storagev1.VolumeBindingImmediate,
+							"local":   storagev1.VolumeBindingWaitForFirstConsumer,
+						} {
+							storageClass := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: name}, VolumeBindingMode: pointer.P(bindingMode)}
+							Expect(storageClassStore.Add(storageClass)).To(Succeed())
+							DeferCleanup(storageClassStore.Delete, storageClass)
+						}
+						for i, storageClassName := range storageClassNames {
+							pvc := &k8sv1.PersistentVolumeClaim{
+								ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: fmt.Sprintf("claim-%d", i)},
+								Spec:       k8sv1.PersistentVolumeClaimSpec{StorageClassName: storageClassName},
+							}
+							Expect(pvcCache.Add(pvc)).To(Succeed())
+							DeferCleanup(pvcCache.Delete, pvc)
+							vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+								Name: pvc.Name,
+								VolumeSource: v1.VolumeSource{PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+									PersistentVolumeClaimVolumeSource: k8sv1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name},
+								}},
+							})
+						}
+
+						pod, err := svc.RenderLaunchManifest(vmi)
+						Expect(err).ToNot(HaveOccurred())
+
+						terms := pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+						if expected {
+							Expect(terms).To(Equal([]k8sv1.PodAffinityTerm{userTerm, reservationTerm}))
+						} else {
+							Expect(terms).To(Equal([]k8sv1.PodAffinityTerm{userTerm}))
+						}
+					},
+					Entry("without claims", nil, true),
+					Entry("with a claim that binds immediately", []*string{pointer.P("network")}, true),
+					Entry("with a claim that waits for a first consumer", []*string{pointer.P("local")}, false),
+					Entry("with a claim of each kind", []*string{pointer.P("network"), pointer.P("local")}, false),
+					Entry("with a claim in a StorageClass that is not in the cache", []*string{pointer.P("unknown")}, false),
+					Entry("with a claim without a StorageClass", []*string{nil}, false),
+				)
+
+				It("should place the launcher of a VMI without GPUs or host devices as before", func() {
+					vmi.Spec.Domain.Devices.GPUs = nil
 					pod, err := svc.RenderLaunchManifest(vmi)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(
-						Equal([]k8sv1.PodAffinityTerm{userTerm}))
+					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(Equal([]k8sv1.PodAffinityTerm{userTerm}))
+				})
+
+				It("should place the launcher as before in a namespace that turned reservations off", func() {
+					Expect(namespaceStore.Update(&k8sv1.Namespace{ObjectMeta: metav1.ObjectMeta{
+						Name:   "default",
+						Labels: map[string]string{WFFCHostReservationEnabledLabel: "false"},
+					}})).To(Succeed())
+					pod, err := svc.RenderLaunchManifest(vmi)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(Equal([]k8sv1.PodAffinityTerm{userTerm}))
 				})
 
 				It("should render a reservation pod on the temporary pod's node", func() {
